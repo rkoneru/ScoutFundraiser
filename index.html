@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#003366">
+    <meta name="description" content="Troop 242 Scout Fundraiser - Sales & Donation Tracker">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <title>Troop 242 Scout Fundraiser</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+    // Block DevTools shortcuts and right-click
+    document.addEventListener('keydown', function(e) {
+        // F12
+        if (e.key === 'F12') { e.preventDefault(); return false; }
+        // Ctrl+Shift+I / Cmd+Opt+I (Inspector)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') { e.preventDefault(); return false; }
+        // Ctrl+Shift+J / Cmd+Opt+J (Console)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'J') { e.preventDefault(); return false; }
+        // Ctrl+Shift+C / Cmd+Opt+C (Element picker)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') { e.preventDefault(); return false; }
+        // Ctrl+U / Cmd+U (View source)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'u') { e.preventDefault(); return false; }
+        // Ctrl+S / Cmd+S (Save page)
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); return false; }
+    });
+    document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    </script>
+</head>
+<body>
+    <!-- SVG Icon Sprite (hidden) -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <!-- Lightning Bolt - Electric Blue -->
+        <symbol id="icon-zap" viewBox="0 0 24 24">
+            <path fill="#0A84FF" d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+        </symbol>
+        
+        <!-- Chart - Orange -->
+        <symbol id="icon-chart" viewBox="0 0 24 24">
+            <rect fill="#FF9F0A" x="5" y="16" width="3" height="6" rx="1"/>
+            <rect fill="#FF9F0A" x="10.5" y="8" width="3" height="14" rx="1"/>
+            <rect fill="#FF9F0A" x="16" y="2" width="3" height="20" rx="1"/>
+        </symbol>
+        
+        <!-- Receipt - Purple -->
+        <symbol id="icon-receipt" viewBox="0 0 24 24">
+            <path fill="#BF5AF2" d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
+            <path fill="#fff" opacity="0.9" d="M8 8h8v1.5H8zM8 12h8v1.5H8zM8 16h5v1.5H8z"/>
+        </symbol>
+        
+        <!-- Users - Teal -->
+        <symbol id="icon-users" viewBox="0 0 24 24">
+            <circle fill="#64D2FF" cx="9" cy="7" r="4"/>
+            <path fill="#64D2FF" d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2H2z"/>
+            <circle fill="#64D2FF" opacity="0.7" cx="17" cy="7" r="3"/>
+            <path fill="#64D2FF" opacity="0.7" d="M22 21v-1.5a3.5 3.5 0 0 0-3-3.45"/>
+        </symbol>
+        
+        <!-- Settings - Gray -->
+        <symbol id="icon-settings" viewBox="0 0 24 24">
+            <circle fill="#8E8E93" cx="12" cy="12" r="3"/>
+            <path fill="#8E8E93" d="M12 1l2 3h3l1 3 3 1v3l-3 2v3l-3 1h-3l-2 3-2-3H5l-1-3-3-1v-3l3-2V5l3-1h3l2-3z" opacity="0.6"/>
+        </symbol>
+        
+        <!-- Card - Green -->
+        <symbol id="icon-card" viewBox="0 0 24 24">
+            <rect fill="#32D74B" x="2" y="5" width="20" height="14" rx="2"/>
+            <rect fill="#fff" opacity="0.3" x="2" y="9" width="20" height="3"/>
+            <rect fill="#fff" opacity="0.9" x="4" y="14" width="4" height="2" rx="0.5"/>
+        </symbol>
+        
+        <!-- Heart - Pink/Red -->
+        <symbol id="icon-heart" viewBox="0 0 24 24">
+            <path fill="#FF375F" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+        </symbol>
+        
+        <!-- QR Code - Indigo -->
+        <symbol id="icon-qr" viewBox="0 0 24 24">
+            <rect fill="#5E5CE6" x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect fill="#5E5CE6" x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect fill="#5E5CE6" x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect fill="#5E5CE6" opacity="0.6" x="14" y="14" width="3" height="3" rx="0.5"/>
+            <rect fill="#5E5CE6" opacity="0.6" x="18" y="14" width="3" height="3" rx="0.5"/>
+            <rect fill="#5E5CE6" opacity="0.6" x="14" y="18" width="3" height="3" rx="0.5"/>
+            <rect fill="#5E5CE6" opacity="0.6" x="18" y="18" width="3" height="3" rx="0.5"/>
+        </symbol>
+        
+        <!-- Dollar - Green -->
+        <symbol id="icon-dollar" viewBox="0 0 24 24">
+            <circle fill="#32D74B" cx="12" cy="12" r="10"/>
+            <line stroke="#fff" stroke-width="2.5" stroke-linecap="round" x1="12" x2="12" y1="5" y2="19"/>
+            <path stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" d="M15 7H9.5a2.5 2.5 0 0 0 0 5h5a2.5 2.5 0 0 1 0 5H8"/>
+        </symbol>
+        
+        <!-- Check - Green -->
+        <symbol id="icon-check" viewBox="0 0 24 24">
+            <circle fill="#32D74B" cx="12" cy="12" r="10"/>
+            <path stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M7 12l3 3 7-7"/>
+        </symbol>
+        
+        <!-- Trash - Red -->
+        <symbol id="icon-trash" viewBox="0 0 24 24">
+            <path fill="#FF453A" d="M3 6h18v1H3z"/>
+            <path fill="#FF453A" d="M19 7v13c0 1-1 2-2 2H7c-1 0-2-1-2-2V7h14z"/>
+            <path fill="#FF453A" opacity="0.7" d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2H8z"/>
+            <line stroke="#fff" stroke-width="1.5" stroke-linecap="round" x1="10" x2="10" y1="10" y2="18"/>
+            <line stroke="#fff" stroke-width="1.5" stroke-linecap="round" x1="14" x2="14" y1="10" y2="18"/>
+        </symbol>
+        
+        <!-- Plus - Blue -->
+        <symbol id="icon-plus" viewBox="0 0 24 24">
+            <circle fill="#0A84FF" cx="12" cy="12" r="10"/>
+            <line stroke="#fff" stroke-width="2.5" stroke-linecap="round" x1="12" x2="12" y1="7" y2="17"/>
+            <line stroke="#fff" stroke-width="2.5" stroke-linecap="round" x1="7" x2="17" y1="12" y2="12"/>
+        </symbol>
+        
+        <!-- Trophy - Gold -->
+        <symbol id="icon-trophy" viewBox="0 0 24 24">
+            <path fill="#FFD60A" d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+            <path fill="#FFD60A" opacity="0.7" d="M6 4H4.5a2.5 2.5 0 0 0 0 5H6V4zM18 4h1.5a2.5 2.5 0 0 1 0 5H18V4z"/>
+            <rect fill="#FFD60A" x="6" y="21" width="12" height="1"/>
+            <path fill="#FFD60A" d="M10 15v3c0 .55-.47.98-.97 1.21C7.85 19.75 7 20.5 7 21h10c0-.5-.85-1.25-2.03-1.79-.5-.23-.97-.66-.97-1.21v-3"/>
+        </symbol>
+        
+        <!-- Refresh - Blue -->
+        <symbol id="icon-refresh" viewBox="0 0 24 24">
+            <path fill="#0A84FF" stroke="#fff" stroke-width="0.5" d="M3 12a9 9 0 0 1 9-9c2.5 0 4.8 1 6.5 2.6L21 8V3h-5l2.3 2.3C16.8 4 14.5 3 12 3a9 9 0 0 0-9 9h2z"/>
+            <path fill="#0A84FF" stroke="#fff" stroke-width="0.5" d="M21 12a9 9 0 0 1-9 9c-2.5 0-4.8-1-6.5-2.6L3 16v5h5l-2.3-2.3C7.2 20 9.5 21 12 21a9 9 0 0 0 9-9h-2z"/>
+        </symbol>
+        
+        <!-- Download - Blue -->
+        <symbol id="icon-download" viewBox="0 0 24 24">
+            <rect fill="#0A84FF" x="3" y="17" width="18" height="4" rx="1"/>
+            <circle fill="#0A84FF" cx="12" cy="9" r="7"/>
+            <path stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M12 5v8m0 0l-3-3m3 3l3-3"/>
+        </symbol>
+        
+        <!-- Logout - Red -->
+        <symbol id="icon-logout" viewBox="0 0 24 24">
+            <path fill="#FF453A" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4v2H5v14h4v2z"/>
+            <path fill="#FF453A" d="M16 17l5-5-5-5v3H9v4h7v3z"/>
+        </symbol>
+    </svg>
+
+    <section id="landing-page" class="landing-page">
+        <div class="landing-hero">
+            <div class="landing-brand">Troop 242</div>
+            <h1 class="landing-title"><span>Scout</span>Fundraiser</h1>
+            <p class="landing-subtitle">Track Scout Card sales, donations, and fundraising progress for your troop.</p>
+        </div>
+        <div class="landing-login card">
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab-btn active" data-tab="login">Sign In</button>
+                <button type="button" class="auth-tab-btn" data-tab="signup">Sign Up</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form active">
+                <p class="landing-login-note">Enter your email and password</p>
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="login-btn">Sign In</button>
+                <p class="login-error" id="login-error" aria-live="polite"></p>
+            </form>
+
+            <!-- Signup Form -->
+            <form id="signup-form" class="auth-form">
+                <p class="landing-login-note">Create your scout account</p>
+                <div class="form-group">
+                    <label for="signup-name">Full Name</label>
+                    <input type="text" id="signup-name" placeholder="Your name" required>
+                </div>
+                <div class="form-group">
+                    <label for="signup-email">Email</label>
+                    <input type="email" id="signup-email" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="signup-password">Password</label>
+                    <input type="password" id="signup-password" placeholder="At least 6 characters" required>
+                </div>
+                <div class="form-group">
+                    <label for="signup-confirm">Confirm Password</label>
+                    <input type="password" id="signup-confirm" placeholder="Confirm password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="signup-btn">Create Account</button>
+                <p class="signup-error" id="signup-error" aria-live="polite"></p>
+            </form>
+        </div>
+    </section>
+
+    <div id="app-shell" class="app-container hidden">
+        <!-- Header -->
+        <header class="app-header">
+            <h1><svg class="icon icon-header"><use href="#icon-dollar"/></svg> Troop 242 Scout Fundraiser</h1>
+            <p class="subtitle">Sell, Track, Lead</p>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-page="quicklog">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-zap"/></svg></span>
+                <span>Quick Log</span>
+            </button>
+            <button class="nav-btn" data-page="dashboard">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-chart"/></svg></span>
+                <span>Dashboard</span>
+            </button>
+            <button class="nav-btn hidden" data-page="sales">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
+                <span>Sales</span>
+            </button>
+            <button class="nav-btn" data-page="scouts">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
+                <span>Roster</span>
+            </button>
+            <button class="nav-btn" data-page="settings">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-settings"/></svg></span>
+                <span>Settings</span>
+            </button>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            <!-- QUICK LOG PAGE -->
+            <section id="quicklog-page" class="page active">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-zap"/></svg> Quick Log</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card step-card" id="step-1">
+                    <div class="step-header">
+                        <div class="step-number">1</div>
+                        <h3>What are you logging?</h3>
+                    </div>
+                    <div class="type-toggle">
+                        <button type="button" class="type-toggle-btn active" data-type="card" id="type-btn-card">
+                            <span class="type-toggle-icon"><svg class="icon"><use href="#icon-card"/></svg></span>
+                            <span class="type-toggle-label">Scout Card</span>
+                        </button>
+                        <button type="button" class="type-toggle-btn" data-type="donation" id="type-btn-donation">
+                            <span class="type-toggle-icon"><svg class="icon"><use href="#icon-heart"/></svg></span>
+                            <span class="type-toggle-label">Donation</span>
+                        </button>
+                    </div>
+                    <select id="quick-type" class="hidden" required>
+                        <option value="card">Scout Card</option>
+                        <option value="donation">Donation</option>
+                    </select>
+                </div>
+
+                <div class="card step-card" id="step-2">
+                    <div class="step-header">
+                        <div class="step-number">2</div>
+                        <h3>Check details</h3>
+                    </div>
+                    <div class="form-group">
+                        <label for="quick-scout-select">Scout</label>
+                        <input type="text" id="quick-scout-select" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="quick-scout">Customer name</label>
+                        <input type="text" id="quick-scout" placeholder="Customer name" required>
+                    </div>
+                    <div id="quick-card-fields">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="quick-qty">Number of cards</label>
+                                <input type="number" id="quick-qty" min="1" step="1" value="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="quick-price">Price per card ($)</label>
+                                <input type="number" id="quick-price" min="0" step="0.01" value="10" readonly>
+                            </div>
+                        </div>
+                        <div class="card-total" id="quick-card-total">Total: $10.00</div>
+                    </div>
+                    <div class="form-group hidden" id="quick-donation-fields">
+                        <label for="quick-amount">Donation amount ($)</label>
+                        <input type="number" id="quick-amount" min="0" step="0.01" placeholder="0.00">
+                    </div>
+                      <div class="form-group">
+                            <label for="quick-date">Date</label>
+                            <input type="date" id="quick-date" required>
+                        </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="quick-payment">Payment method</label>
+                            <select id="quick-payment" required>
+                                <option value="Cash">Cash</option>
+                                <option value="CashApp">Cash App</option>
+                                <option value="Zelle">Zelle</option>
+                                <option value="Venmo">Venmo</option>
+                                <option value="ApplePay">Apple Pay</option>
+                            </select>
+                        </div>
+                      
+                    </div>
+                    <button type="button" class="btn btn-accent btn-qr-pay hidden" id="quick-show-qr"><svg class="icon icon-btn"><use href="#icon-qr"/></svg> Show Payment QR</button>
+                </div>
+
+                <div class="card step-card" id="step-3">
+                    <div class="step-header">
+                        <div class="step-number">3</div>
+                        <h3>Submit</h3>
+                    </div>
+                    <div id="quick-summary" class="quick-summary">Scan a QR code to get started.</div>
+                    <button type="button" class="btn btn-primary" id="quick-submit">Record Sale</button>
+                </div>
+
+                <!-- Hidden QR elements (referenced by JS) -->
+                <video id="qr-video" class="hidden" playsinline></video>
+                <canvas id="qr-canvas" class="hidden"></canvas>
+                <input type="hidden" id="qr-text">
+            </section>
+
+            <!-- DASHBOARD PAGE -->
+            <section id="dashboard-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-chart"/></svg> Scout Dashboard</h2>
+                                        <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card" id="stats-overview">
+                    <h3>Fundraising Overview</h3>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="total-raised">$0.00</div>
+                            <div class="stat-label">Total Raised</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="cards-sold">0</div>
+                            <div class="stat-label">Cards Sold</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="donations-count">0</div>
+                            <div class="stat-label">Donations</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="scouts-active">0</div>
+                            <div class="stat-label">Scouts Active</div>
+                        </div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-label">
+                            <span>Goal Progress</span>
+                            <span id="goal-pct">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="goal-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="progress-text" id="goal-progress-text">$0.00 of $5,000.00</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>All Transactions</h3>
+                    <div class="search-bar">
+                        <input type="text" id="dash-sales-search" placeholder="Search sales...">
+                        <select id="dash-sales-filter-type">
+                            <option value="all">All Types</option>
+                            <option value="card">Scout Card</option>
+                            <option value="donation">Donation</option>
+                        </select>
+                        <select id="dash-sales-filter-payment">
+                            <option value="all">All Payments</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Zelle">Zelle</option>
+                            <option value="Venmo">Venmo</option>
+                            <option value="CashApp">CashApp</option>
+                            <option value="ApplePay">Apple Pay</option>
+                        </select>
+                    </div>
+                    <div id="dash-sales-list"></div>
+                </div>
+            </section>
+
+            <!-- SALES PAGE -->
+            <section id="sales-page" class="page">
+                 <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-receipt"/></svg> All Transactions</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+              
+
+                <div class="card hidden">
+                    <h3>Quick Add Sale</h3>
+                    <form id="sale-form">
+                        <div class="form-group">
+                            <label for="sale-scout">Scout</label>
+                            <select id="sale-scout" required>
+                                <option value="">-- Select a Scout --</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sale-type">Type</label>
+                                <select id="sale-type" required>
+                                    <option value="card">Scout Card</option>
+                                    <option value="donation">Donation</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sale-amount">Amount ($)</label>
+                                <input type="number" id="sale-amount" step="0.01" min="0" placeholder="10.00" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="sale-payment">Payment Method</label>
+                            <select id="sale-payment" required>
+                                <option value="Cash">Cash</option>
+                                <option value="Zelle">Zelle</option>
+                                <option value="Venmo">Venmo</option>
+                                <option value="CashApp">CashApp</option>
+                                <option value="ApplePay">Apple Pay</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sale-customer">Customer Name</label>
+                                <input type="text" id="sale-customer" placeholder="Customer name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="sale-date">Date</label>
+                                <input type="date" id="sale-date" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="sale-notes">Notes (optional)</label>
+                            <textarea id="sale-notes" placeholder="Any details..." rows="2"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary"><svg class="icon icon-btn"><use href="#icon-check"/></svg> Record Sale</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3>All Transactions</h3>
+                    <div class="search-bar">
+                        <input type="text" id="sales-search" placeholder="Search sales...">
+                        <select id="sales-filter-type">
+                            <option value="all">All Types</option>
+                            <option value="card">Scout Card</option>
+                            <option value="donation">Donation</option>
+                        </select>
+                        <select id="sales-filter-payment">
+                            <option value="all">All Payments</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Zelle">Zelle</option>
+                            <option value="Venmo">Venmo</option>
+                            <option value="CashApp">CashApp</option>
+                            <option value="ApplePay">Apple Pay</option>
+                        </select>
+                    </div>
+                    <div id="sales-list"></div>
+                </div>
+            </section>
+
+            <!-- SCOUTS PAGE -->
+            <section id="scouts-page" class="page">
+               <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-users"/></svg> Troop Roster</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+                <div class="card hidden">
+                    <h3>Add Scout</h3>
+                    <form id="scout-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="scout-name">Scout Name</label>
+                                <input type="text" id="scout-name" placeholder="Full name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="scout-goal">Individual Goal ($)</label>
+                                <input type="number" id="scout-goal" min="0" step="1" value="2000" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary"><svg class="icon icon-btn"><use href="#icon-plus"/></svg> Add Scout</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3><svg class="icon icon-heading-sm"><use href="#icon-trophy"/></svg> Leaderboard</h3>
+                    <div id="leaderboard"></div>
+                </div>
+
+                <div class="card">
+                    <h3>All Scouts</h3>
+                    <div id="scouts-list"></div>
+                </div>
+            </section>
+
+            <!-- QR PAY PAGE -->
+            <section id="qrpay-page" class="page">
+                <h2><svg class="icon icon-heading"><use href="#icon-qr"/></svg> QR Quick Pay</h2>
+
+                <div class="card">
+                    <h3>Generate Payment QR Code</h3>
+                    <p class="qr-instructions">Set up the transaction, then show the QR code to the customer to scan and pay instantly.</p>
+                    <form id="qr-form">
+                        <div class="form-group">
+                            <label for="qr-scout">Scout</label>
+                            <select id="qr-scout" required>
+                                <option value="">-- Select a Scout --</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="qr-type">Type</label>
+                                <select id="qr-type" required>
+                                    <option value="card">Scout Card</option>
+                                    <option value="donation">Donation</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="qr-amount">Amount ($)</label>
+                                <input type="number" id="qr-amount" step="0.01" min="0" placeholder="0.00" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="qr-payment">Payment Method</label>
+                            <select id="qr-payment" required>
+                                <option value="Venmo">Venmo</option>
+                                <option value="CashApp">CashApp</option>
+                                <option value="Zelle">Zelle</option>
+                                <option value="ApplePay">Apple Pay</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary"><svg class="icon icon-btn"><use href="#icon-qr"/></svg> Generate QR Code</button>
+                    </form>
+                </div>
+
+                <div class="card qr-result-card hidden" id="qr-result-card">
+                    <div class="qr-display">
+                        <div class="qr-header">
+                            <h3 id="qr-title">Scan to Pay</h3>
+                            <p id="qr-subtitle"></p>
+                        </div>
+                        <div id="qr-code-container" class="qr-code-container"></div>
+                        <div class="qr-payment-info">
+                            <p id="qr-payment-detail"></p>
+                            <p id="qr-amount-display" class="qr-amount-display"></p>
+                        </div>
+                        <p class="qr-note" id="qr-note"></p>
+                    </div>
+                    <div class="qr-actions">
+                        <button type="button" class="btn btn-primary" id="qr-record-sale"><svg class="icon icon-btn"><use href="#icon-check"/></svg> Record This Sale</button>
+                        <button type="button" class="btn btn-secondary" id="qr-new"><svg class="icon icon-btn"><use href="#icon-refresh"/></svg> New QR Code</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Scout PROFILE PAGE -->
+            <section id="settings-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-settings"/></svg> Scout Profile</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card admin-profile-card">
+                    <div class="admin-profile-header">
+                        <div class="admin-avatar" id="admin-avatar">?</div>
+                        <div class="admin-profile-info">
+                            <h3 id="admin-name">Scout</h3>
+                            <p id="admin-email">email@example.com</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Troop Information</h3>
+                    <div class="form-group">
+                        <label for="troop-name">Troop Name</label>
+                        <input type="text" id="troop-name" value="Troop 242">
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Fundraising Settings</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="fundraising-goal">Fundraising Goal ($)</label>
+                            <input type="number" id="fundraising-goal" min="0" step="1" value="5000">
+                        </div>
+                        <div class="form-group">
+                            <label for="card-price">Scout Card Price ($)</label>
+                            <input type="number" id="card-price" min="0" step="0.01" value="10">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Quick Log Field Controls</h3>
+                    <p class="step-note">Toggle which fields scouts can edit on the Quick Log page</p>
+                    <div class="field-control-row">
+                        <span class="field-control-name">Card Price</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="ctrl-price-editable">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-status" id="ctrl-price-label">Locked</span>
+                    </div>
+                    <div class="field-control-row">
+                        <span class="field-control-name">Number of Cards</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="ctrl-qty-editable" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-status" id="ctrl-qty-label">Editable</span>
+                    </div>
+                    <div class="field-control-row">
+                        <span class="field-control-name">Date</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="ctrl-date-editable" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-status" id="ctrl-date-label">Editable</span>
+                    </div>
+                    <div class="field-control-row">
+                        <span class="field-control-name">Customer Name</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="ctrl-customer-editable" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-status" id="ctrl-customer-label">Editable</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Payment Handles</h3>
+                    <p class="step-note">Set your payment handles so QR codes can be generated for customers. Lock them once configured to prevent accidental changes.</p>
+                    <div class="handle-row">
+                        <div class="form-group handle-input-group">
+                            <label for="handle-zelle">Zelle</label>
+                            <input type="text" id="handle-zelle" placeholder="Phone or email for Zelle">
+                            <div class="handle-qr-tools">
+                                <input type="file" id="handle-qr-zelle" class="handle-qr-input" accept="image/*">
+                                <span class="step-note">Recommended: under 300 KB</span>
+                                <img id="handle-qr-preview-zelle" class="handle-qr-preview hidden" alt="Zelle QR preview">
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-zelle">Remove QR</button>
+                            </div>
+                        </div>
+                        <div class="handle-lock">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="lock-zelle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="lock-status" id="lock-zelle-label">Unlocked</span>
+                        </div>
+                    </div>
+                    <div class="handle-row">
+                        <div class="form-group handle-input-group">
+                            <label for="handle-venmo">Venmo</label>
+                            <input type="text" id="handle-venmo" placeholder="@username">
+                            <div class="handle-qr-tools">
+                                <input type="file" id="handle-qr-venmo" class="handle-qr-input" accept="image/*">
+                                <span class="step-note">Recommended: under 300 KB</span>
+                                <img id="handle-qr-preview-venmo" class="handle-qr-preview hidden" alt="Venmo QR preview">
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-venmo">Remove QR</button>
+                            </div>
+                        </div>
+                        <div class="handle-lock">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="lock-venmo">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="lock-status" id="lock-venmo-label">Unlocked</span>
+                        </div>
+                    </div>
+                    <div class="handle-row">
+                        <div class="form-group handle-input-group">
+                            <label for="handle-cashapp">CashApp</label>
+                            <input type="text" id="handle-cashapp" placeholder="$cashtag">
+                            <div class="handle-qr-tools">
+                                <input type="file" id="handle-qr-cashapp" class="handle-qr-input" accept="image/*">
+                                <span class="step-note">Recommended: under 300 KB</span>
+                                <img id="handle-qr-preview-cashapp" class="handle-qr-preview hidden" alt="CashApp QR preview">
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-cashapp">Remove QR</button>
+                            </div>
+                        </div>
+                        <div class="handle-lock">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="lock-cashapp">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="lock-status" id="lock-cashapp-label">Unlocked</span>
+                        </div>
+                    </div>
+                    <div class="handle-row">
+                        <div class="form-group handle-input-group">
+                            <label for="handle-applepay">Apple Pay</label>
+                            <input type="text" id="handle-applepay" placeholder="Phone or email for Apple Pay">
+                            <div class="handle-qr-tools">
+                                <input type="file" id="handle-qr-applepay" class="handle-qr-input" accept="image/*">
+                                <span class="step-note">Recommended: under 300 KB</span>
+                                <img id="handle-qr-preview-applepay" class="handle-qr-preview hidden" alt="Apple Pay QR preview">
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-applepay">Remove QR</button>
+                            </div>
+                        </div>
+                        <div class="handle-lock">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="lock-applepay">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="lock-status" id="lock-applepay-label">Unlocked</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="install-app-card">
+                    <h3>Install App</h3>
+                    <p>Install Troop 242 Fundraiser on your device for quick access from your home screen.</p>
+                    <button type="button" class="btn btn-primary" id="install-app-btn" style="width:100%;margin-top:0.75rem;"><svg class="icon icon-btn"><use href="#icon-download"/></svg> Install App</button>
+                    <p class="step-note hidden" id="install-app-done">App is already installed!</p>
+                </div>
+
+                <div class="card">
+                    <h3>About</h3>
+                    <p><strong>Troop 242 Scout Fundraiser</strong></p>
+                    <p>Version 1.0.0</p>
+                    <p>Fundraising Tracker - March through May</p>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Scout Detail Modal -->
+    <div id="scout-detail-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="scout-detail"></div>
+        </div>
+    </div>
+
+    <!-- Sale Detail Modal -->
+    <div id="sale-detail-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="sale-detail"></div>
+        </div>
+    </div>
+
+    <!-- Payment QR Modal -->
+    <div id="payment-qr-modal" class="modal">
+        <div class="modal-content payment-qr-modal-content">
+            <span class="close">&times;</span>
+            <div id="payment-qr-content"></div>
+        </div>
+    </div>
+
+    <!-- Apple-Style Alert Dialog -->
+    <div id="apple-alert" class="apple-dialog">
+        <div class="apple-dialog-backdrop"></div>
+        <div class="apple-dialog-content">
+            <div class="apple-dialog-body">
+                <h3 class="apple-dialog-title" id="apple-alert-title"></h3>
+                <p class="apple-dialog-message" id="apple-alert-message"></p>
+            </div>
+            <div class="apple-dialog-actions">
+                <button class="apple-btn apple-btn-primary" id="apple-alert-ok">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Apple-Style Confirm Dialog -->
+    <div id="apple-confirm" class="apple-dialog">
+        <div class="apple-dialog-backdrop"></div>
+        <div class="apple-dialog-content">
+            <div class="apple-dialog-body">
+                <h3 class="apple-dialog-title" id="apple-confirm-title"></h3>
+                <p class="apple-dialog-message" id="apple-confirm-message"></p>
+            </div>
+            <div class="apple-dialog-actions">
+                <button class="apple-btn apple-btn-secondary" id="apple-confirm-cancel">Cancel</button>
+                <button class="apple-btn apple-btn-danger" id="apple-confirm-ok">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (loaded as modules) -->
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+        import { getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+        // Make Firebase globals available to app.js
+        window.firebaseImports = {
+            initializeApp, getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut,
+            getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp
+        };
+
+        // Helper: load a script and return a promise
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src;
+                s.onload = resolve;
+                s.onerror = reject;
+                document.body.appendChild(s);
+            });
+        }
+ 
+        // Load QR libraries in parallel (not blocking)
+        loadScript('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js').catch(() => {});
+        loadScript('jsqr.min.js').catch(() => {});
+
+        // Fix SVG icons - add viewBox to all icon SVGs
+        function fixIconSvgs() {
+            document.querySelectorAll('svg.icon, svg.icon-btn, svg.icon-heading, svg.icon-heading-sm, svg.icon-header').forEach(svg => {
+                svg.setAttribute('viewBox', '0 0 24 24');
+                svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            });
+        }
+
+        // Run immediately
+        fixIconSvgs();
+        
+        // Watch for dynamically added icons
+        const iconObserver = new MutationObserver(fixIconSvgs);
+        iconObserver.observe(document.body, { childList: true, subtree: true });
+
+        // Load firebase-config FIRST, then app.js, then initialize
+        await loadScript('firebase-config.js');
+        await loadScript('app.js');
+
+        // DOMContentLoaded has already fired by now (module scripts are deferred),
+        // so call initializeFirebase directly
+        if (typeof window.initializeFirebase === 'function') {
+            window.initializeFirebase();
+        }
+    </script>
+</body>
+</html>
