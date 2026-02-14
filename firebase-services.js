@@ -37,7 +37,12 @@ class FirebaseSaleService {
 
     async getTotalCardsSold() {
         const sales = await this.store.getSales();
-        return sales.filter(s => s.type === 'card').length;
+        return sales.reduce((sum, s) => {
+            if (!s || s.type !== 'card') return sum;
+            const qty = Number(s.qty);
+            if (Number.isFinite(qty) && qty > 0) return sum + Math.floor(qty);
+            return sum + 1;
+        }, 0);
     }
 
     async getTotalDonations() {

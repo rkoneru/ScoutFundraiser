@@ -5,10 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#003366">
     <meta name="description" content="Troop 242 Scout Fundraiser - Sales & Donation Tracker">
+    <!-- SECURITY FIX: Content Security Policy to prevent XSS attacks -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/firebasejs/ https://cdn.jsdelivr.net https://apis.google.com;
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: https:;
+        connect-src 'self' https://*.firebaseio.com https://*.firebase.googleapis.com https://*.googleapis.com https://www.gstatic.com https://cdn.jsdelivr.net;
+    ">
+    <!-- SECURITY FIX: Prevent clickjacking -->
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon.png">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>💰</text></svg>">
     <title>Troop 242 Scout Fundraiser</title>
+    <!-- <title>Troop 242 Scout Fundraiser</title> -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -207,7 +218,7 @@
     <div id="app-shell" class="app-container hidden">
         <!-- Header -->
         <header class="app-header">
-            <h1><svg class="icon icon-header"><use href="#icon-dollar"/></svg> Troop 242 Scout Fundraiser</h1>
+            <h1><svg class="icon icon-header"><use href="#icon-dollar"/></svg> <span>Troop 242 </span>Scout Fundraiser</h1>
             <p class="subtitle">Sell, Track, Lead <span id="header-role-badge" class="role-badge hidden" aria-live="polite"></span></p>
         </header>
 
@@ -949,58 +960,7 @@
         </div>
     </div>
 
-    <!-- Firebase SDK (loaded as modules) -->
-    <script type="module">
-        // Import Firebase modules
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
-        import { getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
-
-        // Make Firebase globals available to app.js
-        window.firebaseImports = {
-            initializeApp, getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail,
-            getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp, onSnapshot
-        };
-
-        // Helper: load a script and return a promise
-        function loadScript(src) {
-            return new Promise((resolve, reject) => {
-                const s = document.createElement('script');
-                s.src = src;
-                s.onload = resolve;
-                s.onerror = reject;
-                document.body.appendChild(s);
-            });
-        }
- 
-        // Load QR libraries in parallel (not blocking)
-        loadScript('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js').catch(() => {});
-        loadScript('jsqr.min.js').catch(() => {});
-
-        // Fix SVG icons - add viewBox to all icon SVGs
-        function fixIconSvgs() {
-            document.querySelectorAll('svg.icon, svg.icon-btn, svg.icon-heading, svg.icon-heading-sm, svg.icon-header').forEach(svg => {
-                svg.setAttribute('viewBox', '0 0 24 24');
-                svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-            });
-        }
-
-        // Run immediately
-        fixIconSvgs();
-        
-        // Watch for dynamically added icons
-        const iconObserver = new MutationObserver(fixIconSvgs);
-        iconObserver.observe(document.body, { childList: true, subtree: true });
-
-        // Load firebase-config FIRST, then app.js, then initialize
-        await loadScript('firebase-config.js');
-        await loadScript('app.js');
-
-        // DOMContentLoaded has already fired by now (module scripts are deferred),
-        // so call initializeFirebase directly
-        if (typeof window.initializeFirebase === 'function') {
-            window.initializeFirebase();
-        }
-    </script>
+    <!-- Firebase bootstrap (module). Extracted into external file to comply with CSP (no inline scripts). -->
+    <script type="module" src="bootstrap.js"></script>
 </body>
 </html>
