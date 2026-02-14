@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function membership(uid) {
+      return get(/databases/$(database)/documents/memberships/$(uid));
+    }
+
+    function membershipExists(uid) {
+      return exists(/databases/$(database)/documents/memberships/$(uid));
+    }
+
+    function userAccount(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function userAccountExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function hasMembershipUnit(unitId) {
+      return membershipExists(request.auth.uid)
+        && membership(request.auth.uid).data.unitId == unitId;
+    }
+
+    function hasUserUnit(unitId) {
+      return userAccountExists(request.auth.uid)
+        && userAccount(request.auth.uid).data.unitId == unitId;
+    }
+
+    function isMemberOfUnit(unitId) {
+      return isSignedIn()
+        && (hasMembershipUnit(unitId) || hasUserUnit(unitId));
+    }
+
+    function isUnitAdmin(unitId) {
+      return isSignedIn()
+        && ((hasMembershipUnit(unitId)
+            && (membership(request.auth.uid).data.role == 'admin'
+              || membership(request.auth.uid).data.role == 'Admin'
+              || membership(request.auth.uid).data.role == 'unit_admin'
+              || membership(request.auth.uid).data.role == 'unit admin'
+              || membership(request.auth.uid).data.role == 'Unit Admin'))
+          || (hasUserUnit(unitId)
+            && (userAccount(request.auth.uid).data.role == 'admin'
+              || userAccount(request.auth.uid).data.role == 'Admin'
+              || userAccount(request.auth.uid).data.role == 'unit_admin'
+              || userAccount(request.auth.uid).data.role == 'unit admin'
+              || userAccount(request.auth.uid).data.role == 'Unit Admin')));
+    }
+
+    function isUnitLeaderOrAdmin(unitId) {
+      return isSignedIn()
+        && ((hasMembershipUnit(unitId)
+            && (membership(request.auth.uid).data.role == 'leader'
+              || membership(request.auth.uid).data.role == 'Leader'
+              || membership(request.auth.uid).data.role == 'unit_leader'
+              || membership(request.auth.uid).data.role == 'unit leader'
+              || membership(request.auth.uid).data.role == 'Unit Leader'
+              || membership(request.auth.uid).data.role == 'admin'
+              || membership(request.auth.uid).data.role == 'Admin'
+              || membership(request.auth.uid).data.role == 'unit_admin'
+              || membership(request.auth.uid).data.role == 'unit admin'
+              || membership(request.auth.uid).data.role == 'Unit Admin'))
+          || (hasUserUnit(unitId)
+            && (userAccount(request.auth.uid).data.role == 'leader'
+              || userAccount(request.auth.uid).data.role == 'Leader'
+              || userAccount(request.auth.uid).data.role == 'unit_leader'
+              || userAccount(request.auth.uid).data.role == 'unit leader'
+              || userAccount(request.auth.uid).data.role == 'Unit Leader'
+              || userAccount(request.auth.uid).data.role == 'admin'
+              || userAccount(request.auth.uid).data.role == 'Admin'
+              || userAccount(request.auth.uid).data.role == 'unit_admin'
+              || userAccount(request.auth.uid).data.role == 'unit admin'
+              || userAccount(request.auth.uid).data.role == 'Unit Admin')));
+    }
+
+    function isSameUnitAsUser(userId) {
+      return isSignedIn()
+        && ((membershipExists(request.auth.uid) && membershipExists(userId)
+            && membership(request.auth.uid).data.unitId == membership(userId).data.unitId)
+          || (membershipExists(request.auth.uid) && userAccountExists(userId)
+            && membership(request.auth.uid).data.unitId == userAccount(userId).data.unitId)
+          || (userAccountExists(request.auth.uid) && membershipExists(userId)
+            && userAccount(request.auth.uid).data.unitId == membership(userId).data.unitId)
+          || (userAccountExists(request.auth.uid) && userAccountExists(userId)
+            && userAccount(request.auth.uid).data.unitId == userAccount(userId).data.unitId));
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+
+      match /sales/{saleId} {
+        allow read: if isSignedIn() && (request.auth.uid == userId || isSameUnitAsUser(userId));
+        allow write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /scouts/{scoutId} {
+        allow read: if isSignedIn() && (request.auth.uid == userId || isSameUnitAsUser(userId));
+        allow write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /memberships/{userId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /profiles/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /units/{unitId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isUnitAdmin(unitId);
+
+      match /scouts/{scoutId} {
+        allow read: if isSignedIn();
+        allow create, update: if isUnitLeaderOrAdmin(unitId);
+        allow delete: if isUnitAdmin(unitId);
+      }
+
+      match /products/{productId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isUnitLeaderOrAdmin(unitId);
+      }
+
+      match /orders/{orderId} {
+        allow read: if isSignedIn();
+        allow create: if isUnitLeaderOrAdmin(unitId);
+        allow update, delete: if isUnitLeaderOrAdmin(unitId);
+      }
+    }
+  }
+}

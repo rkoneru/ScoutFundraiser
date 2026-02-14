@@ -7,26 +7,9 @@
     <meta name="description" content="Troop 242 Scout Fundraiser - Sales & Donation Tracker">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>💰</text></svg>">
     <title>Troop 242 Scout Fundraiser</title>
     <link rel="stylesheet" href="styles.css">
-    <script>
-    // Block DevTools shortcuts and right-click
-    document.addEventListener('keydown', function(e) {
-        // F12
-        if (e.key === 'F12') { e.preventDefault(); return false; }
-        // Ctrl+Shift+I / Cmd+Opt+I (Inspector)
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') { e.preventDefault(); return false; }
-        // Ctrl+Shift+J / Cmd+Opt+J (Console)
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'J') { e.preventDefault(); return false; }
-        // Ctrl+Shift+C / Cmd+Opt+C (Element picker)
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') { e.preventDefault(); return false; }
-        // Ctrl+U / Cmd+U (View source)
-        if ((e.ctrlKey || e.metaKey) && e.key === 'u') { e.preventDefault(); return false; }
-        // Ctrl+S / Cmd+S (Save page)
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); return false; }
-    });
-    document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-    </script>
 </head>
 <body>
     <!-- SVG Icon Sprite (hidden) -->
@@ -167,6 +150,7 @@
                     <input type="password" id="login-password" placeholder="Password" required>
                 </div>
                 <button type="submit" class="btn btn-primary" id="login-btn">Sign In</button>
+                <button type="button" class="btn btn-secondary" id="forgot-password-btn">Forgot Password?</button>
                 <p class="login-error" id="login-error" aria-live="polite"></p>
             </form>
 
@@ -176,6 +160,31 @@
                 <div class="form-group">
                     <label for="signup-name">Full Name</label>
                     <input type="text" id="signup-name" placeholder="Your name" required>
+                </div>
+                <div class="form-group">
+                    <label for="signup-role">Role</label>
+                    <select id="signup-role" required>
+                         <option value="scout">Scout</option>
+                        <option value="parent">Parent/Guardian</option>
+                        <option value="admin">Unit Admin</option>
+                        <option value="leader">Unit Leader</option>
+                       
+                    </select>
+                </div>
+                <div class="form-group hidden" id="signup-create-unit-group">
+                    <label class="toggle-switch" style="display:inline-flex;align-items:center;gap:0.5rem;">
+                        <input type="checkbox" id="signup-create-unit" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-status" style="margin-left:0.5rem;">Create a new unit</span>
+                </div>
+                <div class="form-group hidden" id="signup-troop-name-group">
+                    <label for="signup-troop-name">Unit Name</label>
+                    <input type="text" id="signup-troop-name" placeholder="Troop 242">
+                </div>
+                <div class="form-group" id="signup-unit-id-group">
+                    <label for="signup-unit-id">Unit ID</label>
+                    <input type="text" id="signup-unit-id" placeholder="Enter your unit ID">
                 </div>
                 <div class="form-group">
                     <label for="signup-email">Email</label>
@@ -199,7 +208,7 @@
         <!-- Header -->
         <header class="app-header">
             <h1><svg class="icon icon-header"><use href="#icon-dollar"/></svg> Troop 242 Scout Fundraiser</h1>
-            <p class="subtitle">Sell, Track, Lead</p>
+            <p class="subtitle">Sell, Track, Lead <span id="header-role-badge" class="role-badge hidden" aria-live="polite"></span></p>
         </header>
 
         <!-- Navigation -->
@@ -212,13 +221,21 @@
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-chart"/></svg></span>
                 <span>Dashboard</span>
             </button>
-            <button class="nav-btn hidden" data-page="sales">
+            <button class=" hidden" data-page="sales">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
                 <span>Sales</span>
             </button>
             <button class="nav-btn" data-page="scouts">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
                 <span>Roster</span>
+            </button>
+            <button class="nav-btn" data-page="communication">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-qr"/></svg></span>
+                <span>Share</span>
+            </button>
+            <button class="nav-btn" data-page="operations">
+                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
+                <span>Ops</span>
             </button>
             <button class="nav-btn" data-page="settings">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-settings"/></svg></span>
@@ -364,7 +381,7 @@
                 <div class="card">
                     <h3>All Transactions</h3>
                     <div class="search-bar">
-                        <input type="text" id="dash-sales-search" placeholder="Search sales...">
+                        <input type="text" id="dash-sales-search" placeholder="Search Scouts...">
                         <select id="dash-sales-filter-type">
                             <option value="all">All Types</option>
                             <option value="card">Scout Card</option>
@@ -445,6 +462,9 @@
                     <h3>All Transactions</h3>
                     <div class="search-bar">
                         <input type="text" id="sales-search" placeholder="Search sales...">
+                        <select id="sales-filter-scout" class="hidden">
+                            <option value="all">All Scouts</option>
+                        </select>
                         <select id="sales-filter-type">
                             <option value="all">All Types</option>
                             <option value="card">Scout Card</option>
@@ -557,6 +577,123 @@
                 </div>
             </section>
 
+            <!-- COMMUNICATION PAGE -->
+            <section id="communication-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-qr"/></svg> Share & Outreach</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card">
+                    <h3>Personal Fundraising Link</h3>
+                    <div class="form-group">
+                        <label for="comm-link">Share Link</label>
+                        <input type="text" id="comm-link" readonly>
+                    </div>
+                    <div id="comm-qr" class="payment-qr-code"></div>
+                    <p class="step-note">Share this link or QR code with family and community supporters.</p>
+                </div>
+
+                <div class="card">
+                    <h3>Message Template</h3>
+                    <div class="form-group">
+                        <label for="comm-message">Pre-filled Message</label>
+                        <textarea id="comm-message" rows="5"></textarea>
+                    </div>
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-secondary" id="comm-copy-link">Copy Link</button>
+                        <button type="button" class="btn btn-secondary" id="comm-copy-message">Copy Message</button>
+                        <button type="button" class="btn btn-primary" id="comm-email">Email</button>
+                        <button type="button" class="btn btn-primary" id="comm-sms">Text Message</button>
+                        <button type="button" class="btn btn-primary" id="comm-share">Share</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- OPERATIONS PAGE -->
+            <section id="operations-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-receipt"/></svg> Operations & Closeout</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card">
+                    <h3>Products & Inventory</h3>
+                    <form id="product-form" class="form-row">
+                        <div class="form-group">
+                            <label for="product-name">Product Name</label>
+                            <input type="text" id="product-name" placeholder="Popcorn Tin">
+                        </div>
+                        <div class="form-group">
+                            <label for="product-sku">SKU</label>
+                            <input type="text" id="product-sku" placeholder="POPCORN-TIN">
+                        </div>
+                        <div class="form-group">
+                            <label for="product-price">Unit Price ($)</label>
+                            <input type="number" id="product-price" min="0" step="0.01" placeholder="20">
+                        </div>
+                        <div class="form-group">
+                            <label for="product-stock">Stock On Hand</label>
+                            <input type="number" id="product-stock" min="0" step="1" placeholder="100">
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-switch" style="display:inline-flex;align-items:center;gap:0.5rem;">
+                                <input type="checkbox" id="product-active" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="toggle-status" style="margin-left:0.5rem;">Active Product</span>
+                        </div>
+                        <div class="form-group" style="align-self:end;">
+                            <button type="submit" class="btn btn-primary">Add Product</button>
+                        </div>
+                    </form>
+                    <div id="product-list"></div>
+                </div>
+
+                <div class="card">
+                    <h3>Submit Product Order</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="order-product">Product</label>
+                            <select id="order-product"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="order-qty">Quantity</label>
+                            <input type="number" id="order-qty" min="1" step="1" value="1">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="order-payment-processor">Payment Processor</label>
+                            <select id="order-payment-processor">
+                                <option value="manual">Manual/Cash</option>
+                                <option value="stripe">Stripe</option>
+                                <option value="square">Square</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="order-txid">Transaction ID (optional)</label>
+                            <input type="text" id="order-txid" placeholder="ch_123 or sq0idp...">
+                        </div>
+                    </div>
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-secondary" id="order-add-line">Add Line</button>
+                        <button type="button" class="btn btn-primary" id="order-submit">Submit Order</button>
+                    </div>
+                    <div id="order-lines"></div>
+                    <div id="orders-list"></div>
+                </div>
+
+                <div class="card">
+                    <h3>Campaign Closeout</h3>
+                    <div id="master-order"></div>
+                    <div id="recon-summary"></div>
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-primary" id="export-closeout-csv">Export Closeout CSV</button>
+                    </div>
+                </div>
+            </section>
+
             <!-- Scout PROFILE PAGE -->
             <section id="settings-page" class="page">
                 <div class="page-header">
@@ -570,7 +707,16 @@
                         <div class="admin-profile-info">
                             <h3 id="admin-name">Scout</h3>
                             <p id="admin-email">email@example.com</p>
+                            <p id="admin-role" class="admin-role">Role: Scout</p>
                         </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Personal Goal</h3>
+                    <div class="form-group">
+                        <label for="personal-goal">My Fundraising Goal ($)</label>
+                        <input type="number" id="personal-goal" min="1" step="1" placeholder="500">
                     </div>
                 </div>
 
@@ -582,7 +728,7 @@
                     </div>
                 </div>
 
-                <div class="card">
+                <div class="card" id="fundraising-settings-card">
                     <h3>Fundraising Settings</h3>
                     <div class="form-row">
                         <div class="form-group">
@@ -594,6 +740,24 @@
                             <input type="number" id="card-price" min="0" step="0.01" value="10">
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label for="donation-base-url">Donation/Share Base URL</label>
+                        <input type="url" id="donation-base-url" placeholder="https://your-campaign.example.com/donate">
+                    </div>
+                    <div class="form-group">
+                        <label for="default-payment-processor">Default Payment Processor</label>
+                        <select id="default-payment-processor">
+                            <option value="manual">Manual/Cash</option>
+                            <option value="stripe">Stripe</option>
+                            <option value="square">Square</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="card hidden" id="page-visibility-card">
+                    <h3>Page Visibility (Admin)</h3>
+                    <p class="step-note">Hide pages for other roles in this unit. This does not grant extra permissions.</p>
+                    <div id="page-visibility-controls"></div>
                 </div>
 
                 <div class="card">
@@ -789,13 +953,13 @@
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
-        import { getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+        import { getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
         // Make Firebase globals available to app.js
         window.firebaseImports = {
-            initializeApp, getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut,
-            getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp
+            initializeApp, getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail,
+            getFirestore, collection, getDoc, getDocs, setDoc, deleteDoc, doc, addDoc, query, where, orderBy, serverTimestamp, onSnapshot
         };
 
         // Helper: load a script and return a promise

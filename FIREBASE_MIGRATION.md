@@ -75,21 +75,66 @@ const scout = await this.firebaseScoutService.getScoutById(id);
 ├── firebase-data.js        # (NEW - Simplified data retrieval)
 ```
 
-## Security Rules (For Later)
-Once you're ready, set Firestore security rules to:
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
-      match /sales/{document=**} {
-        allow read, write: if request.auth.uid == userId;
-      }
-    }
-  }
-}
-```
+## Security Rules
+This project now includes a dedicated [firestore.rules](firestore.rules) file.
+
+Key behavior in the rules:
+- unit members can read `units/{unitId}/scouts`, `products`, and `orders`
+- unit `leader` or `admin` can create/update scouts, products, and orders
+- only unit `admin` can delete scouts and unit docs
+- each user can read/write only their own `users/{uid}` data and sales
+
+## Role Permissions Matrix (Current App Behavior)
+
+The app currently supports four roles: `admin`, `leader`, `scout`, and `parent`.
+
+### Admin
+- Operations page access
+- Add products
+- Adjust inventory
+- Submit product orders
+- View/edit fundraising settings
+- Delete scouts from unit roster
+- No Communication page access
+
+### Leader
+- Operations page access
+- Add products
+- Adjust inventory
+- Submit product orders
+- View/edit fundraising settings
+- Cannot delete scouts (admin-only)
+- No Communication page access
+
+### Scout
+- Communication page access (share/outreach)
+- Quick Log, Dashboard, Sales, Scouts, Leaderboard access
+- Personal goal prompt and personal goal updates
+- No Operations page access
+- No fundraising settings management
+
+### Parent/Guardian
+- Quick Log, Dashboard, Sales, Scouts, Leaderboard access
+- No Communication page access
+- No Operations page access
+- No fundraising settings management
+
+### Notes on Scouts Data
+- Scouts are displayed from database data only (no in-app scout add form).
+- If shared unit scout docs are empty, app can derive scout rows from sales/legacy data for display.
+
+Deploy the rules from Firebase Console (Firestore Database → Rules) by pasting the contents of [firestore.rules](firestore.rules), or deploy with Firebase CLI if configured.
+
+### Firebase CLI Quick Deploy
+This repo now includes:
+- [firebase.json](firebase.json) (points Firestore rules to [firestore.rules](firestore.rules))
+- [.firebaserc](.firebaserc) (set your default project)
+
+Steps:
+1. Replace `YOUR_FIREBASE_PROJECT_ID` in [.firebaserc](.firebaserc) with your real Firebase project ID.
+2. Install Firebase CLI (one time): `npm install -g firebase-tools`
+3. Login: `firebase login`
+4. Deploy rules: `firebase deploy --only firestore:rules`
 
 ##  Troubleshooting
 - **"Firebase config not loaded"** → Check `firebase-config.js` has your real credentials
