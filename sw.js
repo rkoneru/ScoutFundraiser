@@ -1,5 +1,5 @@
 // Service Worker for Scout Fundraiser PWA
-const CACHE_NAME = 'scoutfundraiser-v1';
+const CACHE_NAME = 'scoutfundraiser-v2';
 const QR_CODE_CDN = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
 const urlsToCache = [
   './',

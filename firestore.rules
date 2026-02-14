@@ -36,46 +36,29 @@ service cloud.firestore {
         && (hasMembershipUnit(unitId) || hasUserUnit(unitId));
     }
 
+    // SECURITY FIX: Normalize role comparison to prevent case variations bypassing checks
+    function normalizeRole(role) {
+      let normalized = role.lower();
+      return normalized == 'unit_admin' || normalized == 'unit admin' ? 'admin'
+        : normalized == 'admin' ? 'admin'
+        : normalized;
+    }
+
     function isUnitAdmin(unitId) {
       return isSignedIn()
         && ((hasMembershipUnit(unitId)
-            && (membership(request.auth.uid).data.role == 'admin'
-              || membership(request.auth.uid).data.role == 'Admin'
-              || membership(request.auth.uid).data.role == 'unit_admin'
-              || membership(request.auth.uid).data.role == 'unit admin'
-              || membership(request.auth.uid).data.role == 'Unit Admin'))
+            && normalizeRole(membership(request.auth.uid).data.role) == 'admin')
           || (hasUserUnit(unitId)
-            && (userAccount(request.auth.uid).data.role == 'admin'
-              || userAccount(request.auth.uid).data.role == 'Admin'
-              || userAccount(request.auth.uid).data.role == 'unit_admin'
-              || userAccount(request.auth.uid).data.role == 'unit admin'
-              || userAccount(request.auth.uid).data.role == 'Unit Admin')));
+            && normalizeRole(userAccount(request.auth.uid).data.role) == 'admin'));
     }
 
     function isUnitLeaderOrAdmin(unitId) {
-      return isSignedIn()
-        && ((hasMembershipUnit(unitId)
-            && (membership(request.auth.uid).data.role == 'leader'
-              || membership(request.auth.uid).data.role == 'Leader'
-              || membership(request.auth.uid).data.role == 'unit_leader'
-              || membership(request.auth.uid).data.role == 'unit leader'
-              || membership(request.auth.uid).data.role == 'Unit Leader'
-              || membership(request.auth.uid).data.role == 'admin'
-              || membership(request.auth.uid).data.role == 'Admin'
-              || membership(request.auth.uid).data.role == 'unit_admin'
-              || membership(request.auth.uid).data.role == 'unit admin'
-              || membership(request.auth.uid).data.role == 'Unit Admin'))
-          || (hasUserUnit(unitId)
-            && (userAccount(request.auth.uid).data.role == 'leader'
-              || userAccount(request.auth.uid).data.role == 'Leader'
-              || userAccount(request.auth.uid).data.role == 'unit_leader'
-              || userAccount(request.auth.uid).data.role == 'unit leader'
-              || userAccount(request.auth.uid).data.role == 'Unit Leader'
-              || userAccount(request.auth.uid).data.role == 'admin'
-              || userAccount(request.auth.uid).data.role == 'Admin'
-              || userAccount(request.auth.uid).data.role == 'unit_admin'
-              || userAccount(request.auth.uid).data.role == 'unit admin'
-              || userAccount(request.auth.uid).data.role == 'Unit Admin')));
+      let role = hasMembershipUnit(unitId)
+        ? normalizeRole(membership(request.auth.uid).data.role)
+        : (hasUserUnit(unitId)
+          ? normalizeRole(userAccount(request.auth.uid).data.role)
+          : '');
+      return isSignedIn() && (role == 'admin' || role == 'leader');
     }
 
     function isSameUnitAsUser(userId) {
@@ -88,6 +71,15 @@ service cloud.firestore {
             && userAccount(request.auth.uid).data.unitId == membership(userId).data.unitId)
           || (userAccountExists(request.auth.uid) && userAccountExists(userId)
             && userAccount(request.auth.uid).data.unitId == userAccount(userId).data.unitId));
+    }
+
+    // Public unit lookup for pre-auth signup validation (stores minimal safe fields only).
+    match /unitsPublic/{unitId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.unitId == unitId
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if false;
     }
 
     match /users/{userId} {
@@ -105,7 +97,12 @@ service cloud.firestore {
     }
 
     match /memberships/{userId} {
-      allow read: if isSignedIn();
+      // SECURITY FIX: Only allow reading memberships from your own unit (prevents IDOR enumeration)
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId
+        || (membershipExists(request.auth.uid)
+            && resource.data.unitId == membership(request.auth.uid).data.unitId)
+      );
       allow create, update, delete: if isSignedIn() && request.auth.uid == userId;
     }
 
@@ -114,23 +111,25 @@ service cloud.firestore {
     }
 
     match /units/{unitId} {
-      allow read: if true;
-      allow create: if isSignedIn();
+      // Unit doc contains private configuration; only unit members can read.
+      allow read: if isMemberOfUnit(unitId);
+      // Allow signed-in user to create a unit they own.
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isUnitAdmin(unitId);
 
       match /scouts/{scoutId} {
-        allow read: if isSignedIn();
+        allow read: if isMemberOfUnit(unitId);
         allow create, update: if isUnitLeaderOrAdmin(unitId);
         allow delete: if isUnitAdmin(unitId);
       }
 
       match /products/{productId} {
-        allow read: if isSignedIn();
+        allow read: if isMemberOfUnit(unitId);
         allow create, update, delete: if isUnitLeaderOrAdmin(unitId);
       }
 
       match /orders/{orderId} {
-        allow read: if isSignedIn();
+        allow read: if isMemberOfUnit(unitId);
         allow create: if isUnitLeaderOrAdmin(unitId);
         allow update, delete: if isUnitLeaderOrAdmin(unitId);
       }
