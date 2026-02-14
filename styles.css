@@ -224,6 +224,39 @@ body {
     color: var(--text-secondary);
 }
 
+.role-badge {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--secondary-color);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+.role-badge--admin {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.role-badge--leader {
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+.role-badge--parent {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.role-badge--scout {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
 /* Main Content */
 .main-content {
     flex: 1;
@@ -1333,6 +1366,13 @@ svg.icon use {
 .admin-profile-info p {
     color: var(--text-secondary);
     font-size: 0.9rem;
+}
+
+.admin-role {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--accent);
+    margin-top: 0.5rem;
 }
 
 /* ==================== FIELD CONTROL TOGGLES ==================== */

@@ -8,6 +8,35 @@ let deferredInstallPrompt = null;
 const MAX_QR_IMAGE_FILE_BYTES = 300 * 1024;
 const MAX_QR_IMAGE_DATAURL_BYTES = 350 * 1024;
 
+function shouldIgnoreAuthUnsupportedEvent(err) {
+    const message = err && err.message ? String(err.message) : String(err || '');
+    const code = err && err.code ? String(err.code) : '';
+    return message === 'unsupported_event' || message.includes('unsupported_event') || code.includes('unsupported_event');
+}
+
+function installGlobalAuthNoiseGuards() {
+    if (window.__sfAuthNoiseGuardsInstalled) return;
+    window.__sfAuthNoiseGuardsInstalled = true;
+
+    window.addEventListener('unhandledrejection', (event) => {
+        const reason = event && event.reason;
+        if (shouldIgnoreAuthUnsupportedEvent(reason)) {
+            console.warn('Ignoring Firebase Auth internal unsupported_event:', reason);
+            event.preventDefault();
+        }
+    });
+
+    window.addEventListener('error', (event) => {
+        const err = event && event.error;
+        if (shouldIgnoreAuthUnsupportedEvent(err)) {
+            console.warn('Ignoring Firebase Auth internal unsupported_event error:', err);
+            event.preventDefault();
+        }
+    });
+}
+
+installGlobalAuthNoiseGuards();
+
 async function registerServiceWorkerIfSupported() {
     if (!('serviceWorker' in navigator)) return;
     if (!window.isSecureContext) {
@@ -248,6 +277,16 @@ function getLocalDateInputValue(date = new Date()) {
     return local.toISOString().split('T')[0];
 }
 
+function isValidUrl(urlString) {
+    if (!urlString) return true; // Empty is OK
+    try {
+        const url = new URL(urlString);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
 function formatDate(dateVal) {
     if (!dateVal) return '';
     // If it's a YYYY-MM-DD string, parse as local time (not UTC)
@@ -256,6 +295,29 @@ function formatDate(dateVal) {
         return new Date(y, m - 1, d).toLocaleDateString();
     }
     return new Date(dateVal).toLocaleDateString();
+}
+
+function getAuthErrorMessage(error, mode = 'login') {
+    const code = (error && error.code) ? String(error.code) : '';
+    const map = {
+        'auth/email-already-in-use': 'That email is already registered. Please sign in instead.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/operation-not-allowed': 'Email/password sign-in is not enabled in Firebase Authentication.',
+        'auth/weak-password': 'Password is too weak. Use at least 6 characters.',
+        'auth/network-request-failed': 'Network error. Check your connection and try again.',
+        'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
+        'auth/user-not-found': 'No account found with this email. Please sign up first.',
+        'auth/wrong-password': 'Incorrect password. Please try again.',
+        'auth/invalid-credential': mode === 'login'
+            ? 'Invalid email or password. Please try again.'
+            : 'Invalid sign-up request. Please review your details and try again.',
+        'auth/user-disabled': 'This account has been disabled. Contact your unit admin.',
+        'permission-denied': 'Access blocked by Firestore rules. Deploy the latest firestore.rules and try again.'
+    };
+
+    if (map[code]) return map[code];
+    if (error && error.message) return error.message;
+    return mode === 'login' ? 'Login failed. Please try again.' : 'Signup failed. Please try again.';
 }
 
 // ==================== FIRESTORE DATA ACCESS ====================
@@ -323,7 +385,9 @@ function getDefaultSettings() {
     return {
         troopName: 'Troop 242',
         fundraisingGoal: 5000,
-        cardPrice: 20,
+        cardPrice: 10,
+        donationBaseUrl: '',
+        defaultPaymentProcessor: 'manual',
         paymentHandles: {
             zelle: '',
             venmo: '',
@@ -351,14 +415,190 @@ function getDefaultSettings() {
     };
 }
 
-// ==================== FIRESTORE SCOUT HELPERS (SHARED) ====================
+function normalizeUnitId(value) {
+    return (value || '').trim().toUpperCase();
+}
 
-// Scouts are stored in a shared top-level 'scouts' collection so all users see the same roster
-async function addScoutToFirestore(userId, scoutData) {
+function normalizeRole(value = '') {
+    const role = (value || '').trim().toLowerCase();
+    if (role === 'unit_leader' || role === 'unit leader' || role === 'leader') return 'leader';
+    if (role === 'unit_admin' || role === 'unit admin' || role === 'admin') return 'admin';
+    if (role === 'parent' || role === 'guardian' || role === 'parent/guardian') return 'parent';
+    if (role === 'scout') return 'scout';
+    return 'scout';
+}
+
+function generateUnitId(length = 6) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out = '';
+    for (let i = 0; i < length; i++) {
+        out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return out;
+}
+
+async function unitExists(unitId) {
+    try {
+        const { getDoc, doc } = window.firebaseImports;
+        const unitDoc = await getDoc(doc(db, 'units', normalizeUnitId(unitId)));
+        return unitDoc.exists();
+    } catch (e) {
+        console.error('Error checking unit:', e);
+        return false;
+    }
+}
+
+async function createUnitForLeader(userId, leaderName, troopName = '') {
+    const { setDoc, getDoc, doc, serverTimestamp } = window.firebaseImports;
+    for (let attempt = 0; attempt < 8; attempt++) {
+        const unitId = generateUnitId();
+        const unitRef = doc(db, 'units', unitId);
+        const existing = await getDoc(unitRef);
+        if (existing.exists()) continue;
+
+        await setDoc(unitRef, {
+            unitId,
+            name: (troopName || '').trim() || 'Troop Unit',
+            createdBy: userId,
+            createdByName: leaderName || '',
+            createdAt: serverTimestamp(),
+            active: true
+        });
+        return unitId;
+    }
+    throw new Error('Unable to generate a unique Unit ID. Please try again.');
+}
+
+async function saveMembershipAndProfile(userId, { unitId, role, name, email }) {
+    const { setDoc, doc, serverTimestamp } = window.firebaseImports;
+    const normalizedUnitId = normalizeUnitId(unitId);
+    const normalizedRole = normalizeRole(role);
+    await setDoc(doc(db, 'memberships', userId), {
+        userId,
+        unitId: normalizedUnitId,
+        role: normalizedRole,
+        status: 'active',
+        createdAt: serverTimestamp()
+    }, { merge: true });
+
+    await setDoc(doc(db, 'profiles', userId), {
+        userId,
+        unitId: normalizedUnitId,
+        role: normalizedRole,
+        name: (name || '').trim(),
+        email: (email || '').trim().toLowerCase(),
+        createdAt: serverTimestamp()
+    }, { merge: true });
+}
+
+async function getMembershipForUser(userId) {
+    try {
+        const { getDoc, doc } = window.firebaseImports;
+        const membershipDoc = await getDoc(doc(db, 'memberships', userId));
+        if (!membershipDoc.exists()) return null;
+        return membershipDoc.data();
+    } catch (e) {
+        console.warn('Membership read unavailable, will try fallback:', e && e.code ? e.code : e);
+        return null;
+    }
+}
+
+async function getUserAccountMeta(userId) {
+    try {
+        const { getDoc, doc } = window.firebaseImports;
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (!userDoc.exists()) return null;
+        const data = userDoc.data() || {};
+        const unitId = normalizeUnitId(data.unitId || '');
+        const role = normalizeRole(data.role || '');
+        if (!unitId || !role) return null;
+        return {
+            userId,
+            unitId,
+            role,
+            name: (data.name || '').trim(),
+            email: (data.email || '').trim().toLowerCase()
+        };
+    } catch (e) {
+        console.warn('Error loading users fallback metadata:', e);
+        return null;
+    }
+}
+
+async function getProfileForUser(userId) {
+    try {
+        const { getDoc, doc } = window.firebaseImports;
+        const profileDoc = await getDoc(doc(db, 'profiles', userId));
+        if (!profileDoc.exists()) return null;
+        return profileDoc.data();
+    } catch (e) {
+        console.error('Error loading profile:', e);
+        return null;
+    }
+}
+
+async function saveProfileForUser(userId, profileData) {
+    try {
+        const { setDoc, doc } = window.firebaseImports;
+        await setDoc(doc(db, 'profiles', userId), profileData, { merge: true });
+        return true;
+    } catch (e) {
+        console.error('Error saving profile:', e);
+        return false;
+    }
+}
+
+async function savePersonalGoalForUser(userId, personalGoal) {
+    try {
+        const { setDoc, doc, serverTimestamp } = window.firebaseImports;
+        await setDoc(doc(db, 'profiles', userId), {
+            personalGoal,
+            goalSetupComplete: true,
+            goalUpdatedAt: serverTimestamp()
+        }, { merge: true });
+        return true;
+    } catch (e) {
+        console.error('Error saving personal goal:', e);
+        return false;
+    }
+}
+
+async function ensureMembershipForExistingUser(user) {
+    if (!user || !user.uid) return null;
+
+    const existing = await getMembershipForUser(user.uid);
+    if (existing && existing.unitId) return existing;
+
+    const fallbackMeta = await getUserAccountMeta(user.uid);
+    if (fallbackMeta && fallbackMeta.unitId) {
+        try {
+            await saveMembershipAndProfile(user.uid, {
+                unitId: fallbackMeta.unitId,
+                role: fallbackMeta.role,
+                name: fallbackMeta.name || (user.displayName || '').trim() || user.email || 'User',
+                email: fallbackMeta.email || user.email || ''
+            });
+        } catch (syncErr) {
+            console.warn('Could not sync fallback user metadata to memberships/profile:', syncErr);
+        }
+        return {
+            unitId: fallbackMeta.unitId,
+            role: fallbackMeta.role,
+            userId: user.uid
+        };
+    }
+
+    return null;
+}
+
+// ==================== FIRESTORE SCOUT HELPERS (UNIT-SCOPED) ====================
+
+async function addScoutToFirestore(userId, unitId, scoutData) {
     try {
         const { collection, addDoc, serverTimestamp } = window.firebaseImports;
-        const docRef = await addDoc(collection(db, 'scouts'), {
+        const docRef = await addDoc(collection(db, `units/${normalizeUnitId(unitId)}/scouts`), {
             ...scoutData,
+            unitId: normalizeUnitId(unitId),
             addedBy: userId,
             createdAt: serverTimestamp()
         });
@@ -369,73 +609,115 @@ async function addScoutToFirestore(userId, scoutData) {
     }
 }
 
-async function getScoutsFromFirestore() {
+async function getScoutsFromFirestore(unitId) {
     try {
+        const normalizedId = normalizeUnitId(unitId);
+        if (!normalizedId) {
+            console.warn('getScoutsFromFirestore called with empty unitId');
+            return [];
+        }
         const { collection, query, getDocs } = window.firebaseImports;
-        const q = query(collection(db, 'scouts'));
+        const q = query(collection(db, `units/${normalizedId}/scouts`));
         const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const sharedScouts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (sharedScouts.length > 0) return sharedScouts;
+
+        const membershipsSnap = await getDocs(collection(db, 'memberships'));
+        const memberUserIds = membershipsSnap.docs
+            .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+            .filter(member => normalizeUnitId(member.unitId) === normalizedId)
+            .map(member => member.userId || member.id);
+
+        const uniqueByName = new Map();
+        for (const memberUserId of memberUserIds) {
+            try {
+                const legacySnap = await getDocs(collection(db, `users/${memberUserId}/scouts`));
+                legacySnap.forEach(legacyDoc => {
+                    const data = legacyDoc.data() || {};
+                    const name = (data.name || '').trim();
+                    if (!name) return;
+                    const key = name.toLowerCase();
+                    if (uniqueByName.has(key)) return;
+                    uniqueByName.set(key, {
+                        id: legacyDoc.id,
+                        name,
+                        goal: Number(data.goal) || 2000,
+                        unitId: normalizedId,
+                        source: 'legacy'
+                    });
+                });
+            } catch (legacyErr) {
+                console.warn('Skipping legacy scouts read for user due to permissions/data mismatch:', memberUserId, legacyErr && legacyErr.code ? legacyErr.code : legacyErr);
+            }
+        }
+
+        return Array.from(uniqueByName.values());
     } catch (e) {
         console.error('Error getting scouts:', e);
         return [];
     }
 }
 
-async function deleteScoutFromFirestore(scoutId) {
+async function deleteScoutFromFirestore(unitId, scoutId) {
     try {
         const { deleteDoc, doc } = window.firebaseImports;
-        await deleteDoc(doc(db, `scouts/${scoutId}`));
+        await deleteDoc(doc(db, `units/${normalizeUnitId(unitId)}/scouts/${scoutId}`));
     } catch (e) {
         console.error('Error deleting scout:', e);
     }
 }
 
-// Migrate scouts from old per-user location to shared collection (runs once per user)
-async function migrateScoutsToShared(userId) {
+// Migrate scouts from old per-user location to current unit collection (runs once per user)
+async function migrateScoutsToShared(userId, unitId) {
     try {
-        const { collection, query, getDocs, doc, getDoc, setDoc } = window.firebaseImports;
+        const { collection, query, getDocs, doc, setDoc, runTransaction } = window.firebaseImports;
 
-        // Check if this user already migrated
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        if (userDoc.exists() && userDoc.data().scoutsMigrated) return;
+        // Use transaction to prevent race condition if called concurrently
+        await runTransaction(db, async (transaction) => {
+            const userRef = doc(db, 'users', userId);
+            const userSnap = await transaction.get(userRef);
 
-        // Read old per-user scouts
-        const oldScoutsSnap = await getDocs(query(collection(db, `users/${userId}/scouts`)));
-        if (oldScoutsSnap.empty) {
-            // Nothing to migrate, but mark as done
-            await setDoc(doc(db, 'users', userId), { scoutsMigrated: true }, { merge: true });
-            return;
-        }
+            // If already migrated, exit
+            if (userSnap.exists() && userSnap.data().scoutsMigrated) return;
 
-        // Get existing shared scouts to avoid duplicates
-        const sharedScouts = await getScoutsFromFirestore();
-        const sharedNames = new Set(sharedScouts.map(s => s.name.toLowerCase()));
-
-        for (const scoutDoc of oldScoutsSnap.docs) {
-            const data = scoutDoc.data();
-            if (data.name && !sharedNames.has(data.name.toLowerCase())) {
-                await addScoutToFirestore(userId, { name: data.name, goal: data.goal || 2000 });
-                sharedNames.add(data.name.toLowerCase());
-                console.log('Migrated scout:', data.name);
+            // Read old per-user scouts
+            const oldScoutsSnap = await getDocs(query(collection(db, `users/${userId}/scouts`)));
+            if (oldScoutsSnap.empty) {
+                // Nothing to migrate, but mark as done
+                transaction.update(userRef, { scoutsMigrated: true });
+                return;
             }
-        }
 
-        // Mark migration complete
-        await setDoc(doc(db, 'users', userId), { scoutsMigrated: true }, { merge: true });
-        console.log('Scout migration complete for user:', userId);
+            // Get existing shared scouts to avoid duplicates
+            const sharedScouts = await getScoutsFromFirestore(unitId);
+            const sharedNames = new Set(sharedScouts.map(s => (s.name || '').toLowerCase()));
+
+            for (const scoutDoc of oldScoutsSnap.docs) {
+                const data = scoutDoc.data();
+                if (data.name && !sharedNames.has(data.name.toLowerCase())) {
+                    await addScoutToFirestore(userId, unitId, { name: data.name, goal: data.goal || 2000 });
+                    sharedNames.add(data.name.toLowerCase());
+                    console.log('Migrated scout:', data.name);
+                }
+            }
+
+            // Mark migration complete
+            transaction.update(userRef, { scoutsMigrated: true });
+            console.log('Scout migration complete for user:', userId);
+        });
     } catch (e) {
         console.error('Scout migration error:', e);
     }
 }
 
-// Also add the logged-in user to shared roster if not already present
-async function ensureUserInRoster(userId, displayName) {
+// Also add the logged-in user to current unit roster if not already present
+async function ensureUserInRoster(userId, displayName, unitId) {
     if (!displayName) return;
     try {
-        const scouts = await getScoutsFromFirestore();
-        const exists = scouts.some(s => s.name.toLowerCase() === displayName.toLowerCase());
+        const scouts = await getScoutsFromFirestore(unitId);
+        const exists = scouts.some(s => (s.name || '').toLowerCase() === displayName.toLowerCase());
         if (!exists) {
-            await addScoutToFirestore(userId, { name: displayName, goal: 2000 });
+            await addScoutToFirestore(userId, unitId, { name: displayName, goal: 2000 });
             console.log('Added current user to shared roster:', displayName);
         }
     } catch (e) {
@@ -443,18 +725,60 @@ async function ensureUserInRoster(userId, displayName) {
     }
 }
 
-// Get ALL sales from ALL users (for leaderboard and troop stats)
-async function getAllSalesFromFirestore() {
+// Get all users and their roles from database
+async function getAllUsersAndRoles() {
     try {
         const { collection, getDocs } = window.firebaseImports;
-        const usersSnap = await getDocs(collection(db, 'users'));
+        const membershipsSnap = await getDocs(collection(db, 'memberships'));
+        const users = [];
+        membershipsSnap.forEach(doc => {
+            const data = doc.data();
+            users.push({
+                userId: doc.id,
+                name: data.name || 'N/A',
+                email: data.email || 'N/A',
+                role: data.role || 'N/A',
+                unitId: data.unitId || 'N/A',
+                status: data.status || 'N/A'
+            });
+        });
+        return users.sort((a, b) => (a.unitId + a.role).localeCompare(b.unitId + b.role));
+    } catch (e) {
+        console.error('Error getting all users:', e);
+        return [];
+    }
+}
+
+// Display all users in console (for debugging)
+window.showAllUsers = async function() {
+    const users = await getAllUsersAndRoles();
+    console.table(users);
+    console.log('Total users:', users.length);
+    return users;
+}
+
+// Get ALL sales from users in same unit (for leaderboard and troop stats)
+async function getAllSalesFromFirestore(unitId) {
+    try {
+        const { collection, getDocs } = window.firebaseImports;
+        const membershipsSnap = await getDocs(collection(db, 'memberships'));
         let allSales = [];
 
-        for (const userDoc of usersSnap.docs) {
-            const salesSnap = await getDocs(collection(db, `users/${userDoc.id}/sales`));
-            salesSnap.forEach(saleDoc => {
-                allSales.push({ id: saleDoc.id, userId: userDoc.id, ...saleDoc.data() });
-            });
+        const normalizedUnitId = normalizeUnitId(unitId);
+        const memberUserIds = membershipsSnap.docs
+            .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+            .filter(member => normalizeUnitId(member.unitId) === normalizedUnitId)
+            .map(member => member.userId || member.id);
+
+        for (const memberUserId of memberUserIds) {
+            try {
+                const salesSnap = await getDocs(collection(db, `users/${memberUserId}/sales`));
+                salesSnap.forEach(saleDoc => {
+                    allSales.push({ id: saleDoc.id, userId: memberUserId, ...saleDoc.data() });
+                });
+            } catch (salesErr) {
+                console.warn('Skipping sales for user due to permissions/data mismatch:', memberUserId, salesErr && salesErr.code ? salesErr.code : salesErr);
+            }
         }
 
         return allSales;
@@ -464,25 +788,178 @@ async function getAllSalesFromFirestore() {
     }
 }
 
-async function getTroopStats() {
+async function getTroopStats(unitId) {
     try {
-        const allSales = await getAllSalesFromFirestore();
+        const allSales = await getAllSalesFromFirestore(unitId);
         let totalRaised = 0;
         let totalCards = 0;
         let totalDonations = 0;
 
         allSales.forEach(sale => {
             totalRaised += Number(sale.amount) || 0;
-            if (sale.type === 'card') totalCards++;
+            if (sale.type === 'card') totalCards += getCardQtyFromSale(sale);
             if (sale.type === 'donation') totalDonations++;
         });
 
-        const scouts = await getScoutsFromFirestore();
+        const scouts = await getScoutsFromFirestore(unitId);
         return { totalRaised, totalCards, totalDonations, scoutCount: scouts.length };
     } catch (e) {
         console.error('Error getting troop stats:', e);
         return { totalRaised: 0, totalCards: 0, totalDonations: 0, scoutCount: 0 };
     }
+}
+
+async function addProductToFirestore(unitId, userId, productData) {
+    try {
+        const { collection, addDoc, serverTimestamp } = window.firebaseImports;
+        const docRef = await addDoc(collection(db, `units/${normalizeUnitId(unitId)}/products`), {
+            ...productData,
+            lowStockThreshold: Number(productData.lowStockThreshold) || 5,
+            createdBy: userId,
+            createdAt: serverTimestamp()
+        });
+        return docRef.id;
+    } catch (e) {
+        console.error('Error adding product:', e);
+        throw e;
+    }
+}
+
+async function getProductsFromFirestore(unitId) {
+    try {
+        const { collection, query, getDocs } = window.firebaseImports;
+        const q = query(collection(db, `units/${normalizeUnitId(unitId)}/products`));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+    } catch (e) {
+        console.error('Error getting products:', e);
+        return [];
+    }
+}
+
+async function saveProductToFirestore(unitId, productId, partialProduct) {
+    try {
+        const { setDoc, doc } = window.firebaseImports;
+        await setDoc(doc(db, `units/${normalizeUnitId(unitId)}/products`, productId), partialProduct, { merge: true });
+        return true;
+    } catch (e) {
+        console.error('Error saving product:', e);
+        return false;
+    }
+}
+
+async function addOrderToFirestore(unitId, userId, orderData) {
+    try {
+        const { collection, addDoc, serverTimestamp } = window.firebaseImports;
+        const docRef = await addDoc(collection(db, `units/${normalizeUnitId(unitId)}/orders`), {
+            ...orderData,
+            unitId: normalizeUnitId(unitId),
+            userId,
+            submittedAt: serverTimestamp()
+        });
+        return docRef.id;
+    } catch (e) {
+        console.error('Error adding order:', e);
+        throw e;
+    }
+}
+
+async function getOrdersFromFirestore(unitId) {
+    try {
+        const { collection, query, getDocs } = window.firebaseImports;
+        const q = query(collection(db, `units/${normalizeUnitId(unitId)}/orders`));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+    } catch (e) {
+        console.error('Error getting orders:', e);
+        return [];
+    }
+}
+
+function toCsv(rows) {
+    if (!rows || rows.length === 0) return '';
+    const headers = Object.keys(rows[0]);
+    const esc = (val) => {
+        const s = String(val == null ? '' : val);
+        if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+    };
+    const lines = [headers.join(',')];
+    rows.forEach(row => {
+        lines.push(headers.map(h => esc(row[h])).join(','));
+    });
+    return lines.join('\n');
+}
+
+function getCardQtyFromSale(sale, fallbackCardPrice) {
+    if (!sale || sale.type !== 'card') return 0;
+
+    const rawQty = Number(sale.qty);
+    if (Number.isFinite(rawQty) && rawQty > 0) return Math.floor(rawQty);
+
+    const unitPrice = Number(sale.cardUnitPrice);
+    const amount = Number(sale.amount);
+    if (Number.isFinite(unitPrice) && unitPrice > 0 && Number.isFinite(amount) && amount > 0) {
+        const est = Math.round(amount / unitPrice);
+        if (est > 0) return est;
+    }
+
+    const fallbackPrice = Number(fallbackCardPrice);
+    if (Number.isFinite(fallbackPrice) && fallbackPrice > 0 && Number.isFinite(amount) && amount > 0) {
+        const est = Math.round(amount / fallbackPrice);
+        if (est > 0) return est;
+    }
+
+    return 1;
+}
+
+function getDefaultUnitPageVisibility() {
+    return {
+        leader: { quicklog: true, dashboard: true, sales: true, scouts: true, operations: true, communication: true },
+        scout: { quicklog: true, dashboard: true, sales: true, scouts: true, operations: true, communication: true },
+        parent: { quicklog: true, dashboard: true, sales: true, scouts: true, operations: true, communication: true }
+    };
+}
+
+function mergeUnitPageVisibility(raw) {
+    const base = getDefaultUnitPageVisibility();
+    const out = { leader: { ...base.leader }, scout: { ...base.scout }, parent: { ...base.parent } };
+    if (!raw || typeof raw !== 'object') return out;
+
+    ['leader', 'scout', 'parent'].forEach(role => {
+        const rawRole = raw[role];
+        if (!rawRole || typeof rawRole !== 'object') return;
+        Object.keys(out[role]).forEach(page => {
+            if (typeof rawRole[page] === 'boolean') out[role][page] = rawRole[page];
+        });
+    });
+
+    return out;
+}
+
+async function loadUnitPageVisibilityFromFirestore(unitId) {
+    try {
+        const { getDoc, doc } = window.firebaseImports;
+        const normalizedUnitId = normalizeUnitId(unitId);
+        if (!normalizedUnitId) return getDefaultUnitPageVisibility();
+        const unitDoc = await getDoc(doc(db, 'units', normalizedUnitId));
+        if (!unitDoc.exists()) return getDefaultUnitPageVisibility();
+        const data = unitDoc.data() || {};
+        return mergeUnitPageVisibility(data.pageVisibility);
+    } catch (e) {
+        console.warn('Unable to load unit page visibility, using defaults:', e && e.code ? e.code : e);
+        return getDefaultUnitPageVisibility();
+    }
+}
+
+async function saveUnitPageVisibilityToFirestore(unitId, pageVisibility) {
+    const { setDoc, doc, serverTimestamp } = window.firebaseImports;
+    const normalizedUnitId = normalizeUnitId(unitId);
+    if (!normalizedUnitId) throw new Error('Unit ID missing');
+    await setDoc(doc(db, 'units', normalizedUnitId), {
+        pageVisibility: mergeUnitPageVisibility(pageVisibility),
+        pageVisibilityUpdatedAt: serverTimestamp()
+    }, { merge: true });
 }
 
 // ==================== MAIN APP CLASS ====================
@@ -491,8 +968,16 @@ class ScoutFundraiserApp {
     constructor() {
         this.currentPage = 'quicklog';
         this.currentUser = currentUser;
+        this.currentUnitId = '';
+        this.currentRole = 'scout';
+        this.currentProfile = null;
         this.settings = null;
         this.sales = [];
+        this.products = [];
+        this.orders = [];
+        this.orderDraftLines = [];
+        this.realtimeUnsubs = [];
+        this.unitPageVisibility = getDefaultUnitPageVisibility();
 
         this.init();
     }
@@ -502,17 +987,63 @@ class ScoutFundraiserApp {
             this.setupAuthUI();
             this.showLanding();
         } else {
-            this.setupApp().then(() => this.showApp());
+            this.setupAppWithRetry()
+                .then(() => this.showApp())
+                .catch(async (error) => {
+                    console.error('App setup error:', error);
+                    await appleAlert('Access Error', this.getSetupErrorMessage(error));
+                    this.showLanding();
+                });
         }
     }
 
     handleAuthChange(user) {
         this.currentUser = user;
         if (user) {
-            this.setupApp().then(() => this.showApp());
+            this.setupAppWithRetry()
+                .then(() => this.showApp())
+                .catch(async (error) => {
+                    console.error('App setup error:', error);
+                    await appleAlert('Access Error', this.getSetupErrorMessage(error));
+                    this.showLanding();
+                });
         } else {
             this.showLanding();
         }
+    }
+
+    getSetupErrorMessage(error) {
+        const code = error && error.code ? String(error.code) : '';
+        const msg = error && error.message ? String(error.message) : String(error || 'Unknown error');
+        if (msg.includes('Membership and users fallback unavailable')) {
+            return 'Your account profile is not set up yet. If you just signed up, wait 2 seconds and try signing in again.';
+        }
+        if (code.includes('permission-denied') || msg.toLowerCase().includes('permission')) {
+            return 'Firestore permissions are blocking app setup. Deploy the latest firestore.rules, then sign in again.';
+        }
+        return `App setup failed: ${msg}`;
+    }
+
+    async setupAppWithRetry(maxAttempts = 5) {
+        let lastErr;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                await this.setupApp();
+                return;
+            } catch (err) {
+                lastErr = err;
+                const msg = err && err.message ? String(err.message) : '';
+                const code = err && err.code ? String(err.code) : '';
+                const isLikelyRace = msg.includes('Membership and users fallback unavailable');
+                const isPermission = code.includes('permission-denied');
+                if (attempt >= maxAttempts || (!isLikelyRace && !isPermission)) {
+                    throw err;
+                }
+                const delayMs = 300 * attempt;
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+        throw lastErr || new Error('App setup failed');
     }
 
     showLanding() {
@@ -523,7 +1054,84 @@ class ScoutFundraiserApp {
     showApp() {
         document.getElementById('landing-page').style.display = 'none';
         document.getElementById('app-shell').classList.remove('hidden');
+        this.updateRoleBadge();
         this.refreshDashboard();
+    }
+
+    getRoleLabel() {
+        const role = (this.currentRole || '').toLowerCase();
+        if (role === 'admin') return 'Unit Admin';
+        if (role === 'leader') return 'Unit Leader';
+        if (role === 'parent') return 'Parent/Guardian';
+        return 'Scout';
+    }
+
+    updateRoleBadge() {
+        const badge = document.getElementById('header-role-badge');
+        if (!badge) return;
+        const role = (this.currentRole || '').toLowerCase();
+        badge.textContent = this.getRoleLabel();
+        badge.classList.remove('role-badge--admin', 'role-badge--leader', 'role-badge--parent', 'role-badge--scout');
+        if (role === 'admin') badge.classList.add('role-badge--admin');
+        else if (role === 'leader') badge.classList.add('role-badge--leader');
+        else if (role === 'parent') badge.classList.add('role-badge--parent');
+        else badge.classList.add('role-badge--scout');
+        badge.classList.remove('hidden');
+    }
+
+    canAccessOperations() {
+        return this.currentRole === 'leader' || this.currentRole === 'admin';
+    }
+
+    canAddScouts() {
+        return this.currentRole === 'leader' || this.currentRole === 'admin';
+    }
+
+    canAccessCommunication() {
+        return this.currentRole === 'scout';
+    }
+
+    isPageBaseAllowedForRole(page, role) {
+        const r = normalizeRole(role);
+        if (page === 'settings') return true;
+        if (page === 'operations') return r === 'leader' || r === 'admin';
+        if (page === 'communication') return r === 'scout';
+        return true;
+    }
+
+    isPageHiddenByAdmin(page, role) {
+        const r = normalizeRole(role);
+        if (r === 'admin') return false;
+        const roleConfig = (this.unitPageVisibility && this.unitPageVisibility[r]) ? this.unitPageVisibility[r] : null;
+        if (!roleConfig) return false;
+        if (typeof roleConfig[page] !== 'boolean') return false;
+        return roleConfig[page] === false;
+    }
+
+    isPageVisibleForCurrentUser(page) {
+        if (!this.isPageBaseAllowedForRole(page, this.currentRole)) return false;
+        if (this.isPageHiddenByAdmin(page, this.currentRole)) return false;
+
+        // Scouts page: Leaders/Admins always see it; Scouts/Parents only on Tuesdays
+        if (page === 'scouts') {
+            const isLeaderOrAdmin = ['leader', 'unit_leader', 'admin', 'unit_admin'].includes(this.currentRole);
+            if (!isLeaderOrAdmin) {
+                // For scouts and parents: only show on Tuesdays
+                const estTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                const dayOfWeek = estTime.getDay();
+                if (dayOfWeek !== 2) return false; // 2 = Tuesday
+            }
+        }
+
+        return true;
+    }
+
+    applyNavigationVisibility() {
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            const page = btn.dataset.page;
+            if (!page) return;
+            btn.classList.toggle('hidden', !this.isPageVisibleForCurrentUser(page));
+        });
     }
 
     // ==================== AUTHENTICATION ====================
@@ -532,6 +1140,12 @@ class ScoutFundraiserApp {
         console.log('setupAuthUI() called - Setting up auth forms');
         const authTabs = document.querySelectorAll('.auth-tab-btn');
         const authForms = document.querySelectorAll('.auth-form');
+        const roleSelect = document.getElementById('signup-role');
+        const createUnitGroup = document.getElementById('signup-create-unit-group');
+        const createUnitToggle = document.getElementById('signup-create-unit');
+        const troopNameGroup = document.getElementById('signup-troop-name-group');
+        const unitIdGroup = document.getElementById('signup-unit-id-group');
+        const unitIdInput = document.getElementById('signup-unit-id');
         
         console.log('Found auth tabs:', authTabs.length);
         console.log('Found auth forms:', authForms.length);
@@ -550,6 +1164,7 @@ class ScoutFundraiserApp {
 
         const loginForm = document.getElementById('login-form');
         const signupForm = document.getElementById('signup-form');
+        const forgotPasswordBtn = document.getElementById('forgot-password-btn');
         
         console.log('Login form found:', !!loginForm);
         console.log('Signup form found:', !!signupForm);
@@ -562,6 +1177,10 @@ class ScoutFundraiserApp {
             });
         }
 
+        if (forgotPasswordBtn) {
+            forgotPasswordBtn.addEventListener('click', () => this.handleForgotPassword());
+        }
+
         if (signupForm) {
             signupForm.addEventListener('submit', (e) => {
                 console.log('Signup form submitted');
@@ -569,6 +1188,25 @@ class ScoutFundraiserApp {
                 this.handleSignup();
             });
         }
+
+        const updateSignupUnitControls = () => {
+            if (!roleSelect || !createUnitGroup || !createUnitToggle || !troopNameGroup || !unitIdGroup || !unitIdInput) return;
+
+            const canCreateUnit = roleSelect.value === 'admin';
+            createUnitGroup.classList.toggle('hidden', !canCreateUnit);
+
+            const willCreateUnit = canCreateUnit && createUnitToggle.checked;
+            troopNameGroup.classList.toggle('hidden', !willCreateUnit);
+            unitIdGroup.classList.toggle('hidden', willCreateUnit);
+
+            if (willCreateUnit) {
+                unitIdInput.value = '';
+            }
+        };
+
+        if (roleSelect) roleSelect.addEventListener('change', updateSignupUnitControls);
+        if (createUnitToggle) createUnitToggle.addEventListener('change', updateSignupUnitControls);
+        updateSignupUnitControls();
     }
 
     async handleLogin() {
@@ -586,12 +1224,41 @@ class ScoutFundraiserApp {
             await signInWithEmailAndPassword(auth, email, password);
             errorEl.textContent = '';
         } catch (error) {
-            errorEl.textContent = error.message || 'Login failed. Please try again.';
+            errorEl.textContent = getAuthErrorMessage(error, 'login');
+        }
+    }
+
+    async handleForgotPassword() {
+        const email = (document.getElementById('login-email').value || '').trim();
+        const errorEl = document.getElementById('login-error');
+
+        if (!email) {
+            errorEl.textContent = 'Enter your email first, then tap Forgot Password.';
+            return;
+        }
+
+        try {
+            const { sendPasswordResetEmail } = window.firebaseImports;
+            if (!sendPasswordResetEmail) {
+                throw new Error('Password reset service unavailable.');
+            }
+
+            await sendPasswordResetEmail(auth, email);
+            errorEl.textContent = '';
+            await appleAlert('Reset Email Sent', 'Check your inbox for a password reset link.');
+        } catch (error) {
+            const message = getAuthErrorMessage(error, 'login');
+            errorEl.textContent = message;
         }
     }
 
     async handleSignup() {
         const name = document.getElementById('signup-name').value.trim();
+        const role = document.getElementById('signup-role').value;
+        const normalizedSignupRole = normalizeRole(role);
+        const createUnit = !!document.getElementById('signup-create-unit').checked;
+        const troopName = document.getElementById('signup-troop-name').value.trim();
+        const unitIdInput = normalizeUnitId(document.getElementById('signup-unit-id').value);
         const email = document.getElementById('signup-email').value.trim();
         const password = document.getElementById('signup-password').value;
         const confirm = document.getElementById('signup-confirm').value;
@@ -603,9 +1270,24 @@ class ScoutFundraiserApp {
             return;
         }
 
-        if (!name || !email || !password || !confirm) {
+        if (!name || !email || !password || !confirm || !role) {
             errorEl.textContent = 'Please fill in all fields.';
             return;
+        }
+
+        let resolvedUnitId = '';
+        const creatingNewUnit = role === 'admin' && createUnit;
+        if (!creatingNewUnit) {
+            if (!unitIdInput) {
+                errorEl.textContent = 'Unit ID is required.';
+                return;
+            }
+            const exists = await unitExists(unitIdInput);
+            if (!exists) {
+                errorEl.textContent = 'Unit ID not found. Check with your unit admin.';
+                return;
+            }
+            resolvedUnitId = unitIdInput;
         }
 
         if (password !== confirm) {
@@ -630,6 +1312,17 @@ class ScoutFundraiserApp {
             const userCred = await createUserWithEmailAndPassword(auth, email, password);
             
             await updateProfile(userCred.user, { displayName: name });
+
+            if (creatingNewUnit) {
+                resolvedUnitId = await createUnitForLeader(userCred.user.uid, name, troopName);
+            }
+
+            await saveMembershipAndProfile(userCred.user.uid, {
+                unitId: resolvedUnitId,
+                role: normalizedSignupRole,
+                name,
+                email
+            });
             
             const userSettings = getDefaultSettings();
             await setDoc(
@@ -637,36 +1330,120 @@ class ScoutFundraiserApp {
                 {
                     name,
                     email,
+                    role: normalizedSignupRole,
+                    unitId: resolvedUnitId,
                     settings: userSettings,
                     createdAt: new Date().toISOString()
                 }
             );
 
-            // Auto-add this scout to the shared roster (non-blocking — don't let this fail signup)
-            try {
-                await ensureUserInRoster(userCred.user.uid, name);
-            } catch (rosterErr) {
-                console.warn('Could not auto-add to roster (will retry on login):', rosterErr);
+            // Do not auto-create scouts here. Scouts list is read from database only.
+
+            if (creatingNewUnit) {
+                await appleAlert('Unit Created', `Your Unit ID is ${resolvedUnitId}. Share this code with scouts/parents to join.`);
             }
 
             errorEl.textContent = '';
             document.getElementById('signup-form').reset();
             errorEl.textContent = 'Account created! Logging in...';
         } catch (error) {
-            console.error('Signup error:', error);
-            errorEl.textContent = error.message || 'Signup failed. Please try again.';
+            const isEmailInUse = !!(error && error.code === 'auth/email-already-in-use');
+            if (isEmailInUse) {
+                console.info('Signup blocked: email already in use. Switching to login.');
+            } else {
+                console.error('Signup error:', error);
+            }
+
+            errorEl.textContent = getAuthErrorMessage(error, 'signup');
+
+            if (isEmailInUse) {
+                const loginTab = document.querySelector('.auth-tab-btn[data-tab="login"]');
+                const signupTab = document.querySelector('.auth-tab-btn[data-tab="signup"]');
+                const loginForm = document.getElementById('login-form');
+                const signupForm = document.getElementById('signup-form');
+                if (loginTab && signupTab && loginForm && signupForm) {
+                    signupTab.classList.remove('active');
+                    loginTab.classList.add('active');
+                    signupForm.classList.remove('active');
+                    loginForm.classList.add('active');
+                    document.getElementById('login-email').value = email;
+                }
+            }
         }
+    }
+
+    async promptForPersonalGoalIfNeeded() {
+        if (this.currentRole !== 'scout') return;
+
+        const existingGoal = Number(this.currentProfile && this.currentProfile.personalGoal);
+        if (Number.isFinite(existingGoal) && existingGoal > 0) return;
+
+        const rawGoal = window.prompt('Set your personal fundraising goal ($):', '500');
+        if (rawGoal === null) {
+            await appleAlert('Goal Needed', 'You can continue now, but please set your personal goal in Settings.');
+            return;
+        }
+
+        const parsedGoal = Number(rawGoal);
+        if (!Number.isFinite(parsedGoal) || parsedGoal <= 0) {
+            await appleAlert('Invalid Goal', 'Please enter a valid amount greater than zero.');
+            return this.promptForPersonalGoalIfNeeded();
+        }
+
+        const saved = await savePersonalGoalForUser(this.currentUser.uid, parsedGoal);
+        if (!saved) {
+            await appleAlert('Save Failed', 'Could not save your personal goal right now. Please try again from Settings.');
+            return;
+        }
+
+        this.currentProfile = {
+            ...(this.currentProfile || {}),
+            personalGoal: parsedGoal,
+            goalSetupComplete: true
+        };
+        await appleAlert('Goal Saved', `Your personal goal is set to ${formatMoney(parsedGoal)}.`);
     }
 
     // ==================== APP SETUP ====================
 
     async setupApp() {
+        const membership = await ensureMembershipForExistingUser(this.currentUser);
+        if (!membership || !membership.unitId) {
+            throw new Error('Membership and users fallback unavailable. Firestore permissions may be missing for memberships and users collections.');
+        }
+        this.currentUnitId = normalizeUnitId((membership && membership.unitId) || '');
+        this.currentRole = normalizeRole((membership && membership.role) || 'scout');
+
+        this.unitPageVisibility = await loadUnitPageVisibilityFromFirestore(this.currentUnitId);
+
+        this.currentProfile = await getProfileForUser(this.currentUser.uid);
+        if (!this.currentProfile) {
+            await saveProfileForUser(this.currentUser.uid, {
+                userId: this.currentUser.uid,
+                unitId: this.currentUnitId,
+                role: this.currentRole,
+                name: (this.currentUser.displayName || '').trim(),
+                email: (this.currentUser.email || '').trim().toLowerCase()
+            });
+            this.currentProfile = await getProfileForUser(this.currentUser.uid);
+        }
+
+        await this.promptForPersonalGoalIfNeeded();
+
         this.settings = await loadSettingsFromFirestore(this.currentUser.uid);
         await this.loadSales();
+        this.allSales = await getAllSalesFromFirestore(this.currentUnitId);
+        if (this.canAccessOperations()) {
+            this.products = await getProductsFromFirestore(this.currentUnitId);
+            this.orders = await getOrdersFromFirestore(this.currentUnitId);
+        } else {
+            this.products = [];
+            this.orders = [];
+        }
 
-        // Migrate old per-user scouts to shared collection & ensure user is in roster
-        await migrateScoutsToShared(this.currentUser.uid);
-        await ensureUserInRoster(this.currentUser.uid, (this.currentUser.displayName || '').trim());
+        // Scouts are read-only from database here; no auto-create/migration writes.
+
+        this.startRealtimeListeners();
 
         // Only bind event listeners once to prevent duplicates
         if (!this._setupDone) {
@@ -676,6 +1453,8 @@ class ScoutFundraiserApp {
             this.setupDashboardPage();
             this.setupSalesPage();
             await this.setupScoutsPage();
+            this.setupCommunicationPage();
+            this.setupOperationsPage();
             this.setupSettingsPage();
             this.setupLogout();
             this.setupModals();
@@ -686,13 +1465,22 @@ class ScoutFundraiserApp {
     }
 
     async loadSales() {
-        this.sales = await getSalesFromFirestore(this.currentUser.uid);
+        // Leaders and admins see all unit sales; scouts see only their own
+        const isLeaderOrAdmin = ['leader', 'unit_leader', 'admin', 'unit_admin'].includes(this.currentRole);
+
+        if (isLeaderOrAdmin) {
+            this.sales = await getAllSalesFromFirestore(this.currentUnitId);
+        } else {
+            this.sales = await getSalesFromFirestore(this.currentUser.uid);
+        }
     }
 
     // ==================== NAVIGATION ====================
 
     setupNavigation() {
         const navButtons = document.querySelectorAll('.nav-btn');
+        this.applyNavigationVisibility();
+
         navButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 const page = btn.dataset.page;
@@ -703,6 +1491,36 @@ class ScoutFundraiserApp {
     }
 
     async navigateTo(page) {
+        if (!this.isPageVisibleForCurrentUser(page)) {
+            page = 'dashboard';
+            window.location.hash = page;
+        }
+
+        if (page === 'communication' && !this.canAccessCommunication()) {
+            page = 'dashboard';
+            window.location.hash = page;
+        }
+
+        if (page === 'operations' && !this.canAccessOperations()) {
+            page = 'dashboard';
+            window.location.hash = page;
+        }
+
+        // Check if scouts/roster page is being accessed on non-Tuesday (for scouts/parents only)
+        if (page === 'scouts') {
+            const isLeaderOrAdmin = ['leader', 'unit_leader', 'admin', 'unit_admin'].includes(this.currentRole);
+            if (!isLeaderOrAdmin) {
+                const estTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                const dayOfWeek = estTime.getDay(); // 0 = Sunday, 1 = Monday, 2 = Tuesday, etc.
+
+                if (dayOfWeek !== 2) { // 2 = Tuesday
+                    await appleAlert('Access Restricted', 'The Roster page is only available on Tuesdays (EST timezone).');
+                    page = 'dashboard';
+                    window.location.hash = page;
+                }
+            }
+        }
+
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.page === page);
         });
@@ -713,22 +1531,110 @@ class ScoutFundraiserApp {
 
         this.currentPage = page;
 
+        this.applyNavigationVisibility();
+
         // Reload fresh data from Firestore on every page switch
         await this.loadSales();
 
         if (page === 'quicklog') {
-            this.scouts = await getScoutsFromFirestore();
+            this.scouts = await getScoutsFromFirestore(this.currentUnitId);
             this.populateScoutDropdown();
-            document.getElementById('quick-scout').focus();
+
+            // 3-step process: Focus on type toggle (Step 1)
+            document.getElementById('type-btn-card').focus();
         }
         if (page === 'dashboard') this.refreshDashboard();
         if (page === 'sales') this.refreshSalesList();
         if (page === 'scouts') {
-            this.scouts = await getScoutsFromFirestore();
-            this.allSales = await getAllSalesFromFirestore();
+            this.scouts = await getScoutsFromFirestore(this.currentUnitId);
+            this.allSales = await getAllSalesFromFirestore(this.currentUnitId);
             this.refreshScoutsList();
             this.refreshLeaderboard();
         }
+        if (page === 'communication') this.refreshCommunicationPage();
+        if (page === 'operations') {
+            this.allSales = await getAllSalesFromFirestore(this.currentUnitId);
+            this.products = await getProductsFromFirestore(this.currentUnitId);
+            this.orders = await getOrdersFromFirestore(this.currentUnitId);
+            this.refreshOperationsPage();
+        }
+    }
+
+    startRealtimeListeners() {
+        if (!window.firebaseImports.onSnapshot) return;
+
+        this.realtimeUnsubs.forEach(unsub => {
+            try { if (typeof unsub === 'function') unsub(); } catch (_e) { }
+        });
+        this.realtimeUnsubs = [];
+
+        const { onSnapshot, collection, doc } = window.firebaseImports;
+
+        const salesUnsub = onSnapshot(collection(db, `users/${this.currentUser.uid}/sales`), (snapshot) => {
+            this.sales = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+            if (this.currentPage === 'dashboard') this.refreshDashboard();
+            if (this.currentPage === 'sales') this.refreshSalesList();
+            if (this.currentPage === 'communication') this.refreshCommunicationPage();
+            if (this.currentPage === 'operations' || this.currentPage === 'scouts') {
+                getAllSalesFromFirestore(this.currentUnitId).then(allSales => {
+                    this.allSales = allSales;
+                    if (this.currentPage === 'operations') this.refreshOperationsPage();
+                    if (this.currentPage === 'scouts') {
+                        this.refreshScoutsList();
+                        this.refreshLeaderboard();
+                    }
+                });
+            }
+        });
+
+        const scoutsUnsub = onSnapshot(collection(db, `units/${normalizeUnitId(this.currentUnitId)}/scouts`), (snapshot) => {
+            this.scouts = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+            if (this.currentPage === 'scouts') {
+                this.refreshScoutsList();
+                this.refreshLeaderboard();
+            }
+        });
+
+        let productsUnsub = () => {};
+        let ordersUnsub = () => {};
+        if (this.canAccessOperations()) {
+            productsUnsub = onSnapshot(collection(db, `units/${normalizeUnitId(this.currentUnitId)}/products`), (snapshot) => {
+                this.products = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+                if (this.currentPage === 'operations') this.refreshOperationsPage();
+            });
+
+            ordersUnsub = onSnapshot(collection(db, `units/${normalizeUnitId(this.currentUnitId)}/orders`), (snapshot) => {
+                this.orders = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+                if (this.currentPage === 'operations') this.refreshOperationsPage();
+            });
+        }
+
+        const userUnsub = onSnapshot(doc(db, 'users', this.currentUser.uid), (docSnap) => {
+            if (!docSnap.exists()) return;
+            const userData = docSnap.data();
+            if (userData.settings) {
+                this.settings = userData.settings;
+                if (this.quickFields && this.quickFields.price && this.settings.cardPrice) {
+                    this.quickFields.price.value = this.settings.cardPrice;
+                    this.updateQuickSummary();
+                }
+            }
+        });
+
+        const unitUnsub = onSnapshot(doc(db, 'units', normalizeUnitId(this.currentUnitId)), (docSnap) => {
+            if (!docSnap.exists()) return;
+            const data = docSnap.data() || {};
+            if (data.pageVisibility) {
+                this.unitPageVisibility = mergeUnitPageVisibility(data.pageVisibility);
+                this.applyNavigationVisibility();
+                if (this.currentPage && !this.isPageVisibleForCurrentUser(this.currentPage)) {
+                    this.navigateTo('dashboard');
+                    window.location.hash = 'dashboard';
+                }
+            }
+        });
+
+        this.realtimeUnsubs.push(salesUnsub, scoutsUnsub, productsUnsub, ordersUnsub, userUnsub, unitUnsub);
     }
 
     // ==================== DASHBOARD ====================
@@ -760,11 +1666,23 @@ class ScoutFundraiserApp {
 
         this.sales.forEach(sale => {
             stats.totalRaised += Number(sale.amount) || 0;
-            if (sale.type === 'card') stats.cardsSold++;
+            if (sale.type === 'card') stats.cardsSold += getCardQtyFromSale(sale, this.settings && this.settings.cardPrice);
             if (sale.type === 'donation') stats.donationsCount++;
         });
 
-        const goal = (this.settings && this.settings.fundraisingGoal) || 5000;
+        // Leaders/Admins see unit goal; Scouts see personal goal
+        const isLeaderOrAdmin = ['leader', 'unit_leader', 'admin', 'unit_admin'].includes(this.currentRole);
+        let goal;
+
+        if (isLeaderOrAdmin) {
+            goal = (this.settings && this.settings.fundraisingGoal) || 5000;
+        } else {
+            const personalGoal = Number(this.currentProfile && this.currentProfile.personalGoal);
+            goal = (Number.isFinite(personalGoal) && personalGoal > 0)
+                ? personalGoal
+                : ((this.settings && this.settings.fundraisingGoal) || 5000);
+        }
+
         const progress = goal > 0 ? (stats.totalRaised / goal) * 100 : 0;
 
         document.getElementById('total-raised').textContent = formatMoney(stats.totalRaised);
@@ -842,11 +1760,26 @@ class ScoutFundraiserApp {
         // Auto-fill date
         document.getElementById('sale-date').value = getLocalDateInputValue();
 
+        // For leaders/admins: show scout filter instead of search
+        const isLeaderOrAdmin = ['leader', 'unit_leader', 'admin', 'unit_admin'].includes(this.currentRole);
+        const searchInput = document.getElementById('sales-search');
+        const scoutFilter = document.getElementById('sales-filter-scout');
+
+        if (isLeaderOrAdmin && scoutFilter) {
+            // Hide search, show scout filter
+            searchInput.classList.add('hidden');
+            scoutFilter.classList.remove('hidden');
+            this.populateSalesScoutFilter();
+        }
+
         // Search and filter listeners
         ['input', 'change'].forEach(evt => {
-            document.getElementById('sales-search').addEventListener(evt, () => this.refreshSalesList());
+            searchInput.addEventListener(evt, () => this.refreshSalesList());
             document.getElementById('sales-filter-type').addEventListener(evt, () => this.refreshSalesList());
             document.getElementById('sales-filter-payment').addEventListener(evt, () => this.refreshSalesList());
+            if (scoutFilter) {
+                scoutFilter.addEventListener(evt, () => this.refreshSalesList());
+            }
         });
 
         // Click delegation for sales list
@@ -858,14 +1791,43 @@ class ScoutFundraiserApp {
         });
     }
 
+    populateSalesScoutFilter() {
+        const scoutFilter = document.getElementById('sales-filter-scout');
+        if (!scoutFilter || !this.scouts) return;
+
+        // Get unique scout names from scouts array
+        const scoutNames = this.scouts
+            .map(s => s.name || 'Unknown')
+            .filter((value, index, self) => self.indexOf(value) === index)
+            .sort();
+
+        // Add scout options
+        scoutNames.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            scoutFilter.appendChild(option);
+        });
+    }
+
     async refreshSalesList() {
+        const isLeaderOrAdmin = ['leader', 'unit_leader', 'admin', 'unit_admin'].includes(this.currentRole);
         const searchTerm = document.getElementById('sales-search').value.toLowerCase();
+        const scoutFilter = document.getElementById('sales-filter-scout').value;
         const typeFilter = document.getElementById('sales-filter-type').value;
         const paymentFilter = document.getElementById('sales-filter-payment').value;
 
         let filtered = this.sales;
 
-        if (searchTerm) {
+        // For leaders/admins: filter by scout name
+        if (isLeaderOrAdmin && scoutFilter && scoutFilter !== 'all') {
+            filtered = filtered.filter(s =>
+                (s.scoutName || '').toLowerCase() === scoutFilter.toLowerCase()
+            );
+        }
+
+        // For scouts: search by customer name
+        if (!isLeaderOrAdmin && searchTerm) {
             filtered = filtered.filter(s =>
                 (s.customerName || '').toLowerCase().includes(searchTerm)
             );
@@ -980,7 +1942,7 @@ class ScoutFundraiserApp {
 
         // Set defaults
         this.quickFields.date.value = getLocalDateInputValue();
-        this.quickFields.price.value = this.settings.cardPrice || 20;
+        this.quickFields.price.value = this.settings.cardPrice || 10;
 
         // Populate scout dropdown
         this.populateScoutDropdown();
@@ -988,7 +1950,7 @@ class ScoutFundraiserApp {
         // Apply field controls from admin settings
         this.applyFieldControls();
 
-        // Type toggle buttons
+        // Type toggle buttons - with auto-advance to Step 2
         this.typeBtns = document.querySelectorAll('.type-toggle-btn');
         this.typeBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -997,6 +1959,9 @@ class ScoutFundraiserApp {
                 this.quickFields.type.value = type;
                 this.setQuickTypeVisibility(type);
                 this.updateQuickSummary();
+
+                // Auto-advance to Step 2 (Check details)
+                this.focusStep2();
             });
         });
 
@@ -1040,6 +2005,18 @@ class ScoutFundraiserApp {
         if (!input) return;
         // Always show the logged-in user's name (read-only, no changing)
         input.value = (this.currentUser.displayName || '').trim() || this.currentUser.email;
+    }
+
+    focusStep2() {
+        // Auto-scroll to Step 2 and focus on customer name field
+        const step2 = document.getElementById('step-2');
+        if (step2) {
+            step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Focus on customer name field (first editable field in Step 2)
+            setTimeout(() => {
+                this.quickFields.scout.focus();
+            }, 300); // Wait for scroll to finish
+        }
     }
 
     applyFieldControls() {
@@ -1383,6 +2360,8 @@ class ScoutFundraiserApp {
         }
 
         let amount = 0;
+        let cardQty = null;
+        let cardUnitPrice = null;
         if (type === 'card') {
             const price = Number(this.quickFields.price.value);
             const qty = Number(this.quickFields.qty.value);
@@ -1391,6 +2370,8 @@ class ScoutFundraiserApp {
                 return;
             }
             amount = price * qty;
+            cardQty = Math.floor(qty);
+            cardUnitPrice = price;
         } else {
             const donation = Number(this.quickFields.amount.value);
             if (!Number.isFinite(donation) || donation <= 0) {
@@ -1410,10 +2391,15 @@ class ScoutFundraiserApp {
         }
 
         try {
+            const isDigitalMethod = ['Venmo', 'CashApp', 'Zelle', 'ApplePay'].includes(paymentMethod);
             const saleData = {
                 type,
                 amount,
+                ...(type === 'card' ? { qty: cardQty, cardUnitPrice } : {}),
                 paymentMethod,
+                paymentProcessor: isDigitalMethod ? ((this.settings && this.settings.defaultPaymentProcessor) || 'manual') : 'manual',
+                paymentStatus: isDigitalMethod ? 'pending' : 'received',
+                paymentTransactionId: '',
                 scoutName,
                 customerName: this.quickFields.scout.value.trim() || 'Customer',
                 date,
@@ -1428,7 +2414,7 @@ class ScoutFundraiserApp {
             this.quickFields.scout.value = '';
             this.quickFields.amount.value = '';
             this.quickFields.qty.value = 1;
-            this.quickFields.price.value = this.settings.cardPrice || 20;
+            this.quickFields.price.value = this.settings.cardPrice || 10;
             this.quickFields.date.value = getLocalDateInputValue();
             this.quickFields.type.value = 'card';
             this.setQuickTypeVisibility('card');
@@ -1445,34 +2431,41 @@ class ScoutFundraiserApp {
     // ==================== SCOUTS ====================
 
     async setupScoutsPage() {
-        this.scouts = await getScoutsFromFirestore();
-        this.allSales = await getAllSalesFromFirestore();
+        this.scouts = await getScoutsFromFirestore(this.currentUnitId);
+        this.allSales = await getAllSalesFromFirestore(this.currentUnitId);
 
         const form = document.getElementById('scout-form');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const nameInput = document.getElementById('scout-name');
-            const goalInput = document.getElementById('scout-goal');
-            const name = nameInput.value.trim();
-            const goal = Number(goalInput.value) || 2000;
+        const formCard = form ? form.closest('.card') : null;
+        if (formCard) {
+            formCard.classList.add('hidden');
+        }
 
-            if (!name) {
-                await appleAlert('Name Required', 'Please enter a scout name.');
-                return;
-            }
+        const scoutsList = document.getElementById('scouts-list');
+        if (scoutsList) {
+            scoutsList.addEventListener('click', async (e) => {
+                const deleteBtn = e.target.closest('[data-action="delete-scout"]');
+                if (!deleteBtn) return;
 
-            try {
-                await addScoutToFirestore(this.currentUser.uid, { name, goal });
-                this.scouts = await getScoutsFromFirestore();
+                if (this.currentRole !== 'admin') {
+                    await appleAlert('Restricted', 'Only unit admins can delete scouts.');
+                    return;
+                }
+
+                const scoutId = deleteBtn.dataset.scoutId;
+                if (!scoutId) return;
+
+                const scout = (this.scouts || []).find(s => s.id === scoutId);
+                const scoutName = scout && scout.name ? scout.name : 'this scout';
+                const confirmed = await appleConfirm('Delete Scout?', `Remove ${scoutName} from this unit roster?`, 'Delete', 'Cancel');
+                if (!confirmed) return;
+
+                await deleteScoutFromFirestore(this.currentUnitId, scoutId);
+                this.scouts = await getScoutsFromFirestore(this.currentUnitId);
+                this.allSales = await getAllSalesFromFirestore(this.currentUnitId);
                 this.refreshScoutsList();
                 this.refreshLeaderboard();
-                this.populateScoutDropdown();
-                nameInput.value = '';
-                goalInput.value = 2000;
-            } catch (e) {
-                await appleAlert('Error', 'Error adding scout: ' + e.message);
-            }
-        });
+            });
+        }
 
         this.refreshScoutsList();
         this.refreshLeaderboard();
@@ -1481,18 +2474,20 @@ class ScoutFundraiserApp {
     refreshScoutsList() {
         const container = document.getElementById('scouts-list');
         if (!container) return;
+        const canManageScouts = this.currentRole === 'admin';
 
-        if (!this.scouts || this.scouts.length === 0) {
-            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><svg class="icon"><use href="#icon-users"/></svg></div><p>No scouts added yet. Add your first scout above!</p></div>';
+        const salesPool = this.allSales || this.sales || [];
+        const derivedScouts = this.getDerivedScoutsFromSales(salesPool);
+        const scoutsForDisplay = (this.scouts && this.scouts.length > 0) ? this.scouts : derivedScouts;
+
+        if (!scoutsForDisplay || scoutsForDisplay.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><svg class="icon"><use href="#icon-users"/></svg></div><p>No scouts found in the database for this unit.</p></div>';
             return;
         }
 
-        // Use allSales (from all users) so totals reflect the whole troop
-        const salesPool = this.allSales || this.sales || [];
-
         let html = '';
-        this.scouts.forEach(scout => {
-            const nameLower = scout.name.toLowerCase();
+        scoutsForDisplay.forEach(scout => {
+            const nameLower = (scout.name || '').toLowerCase();
             const scoutSales = salesPool.filter(s =>
                 (s.scoutName || s.customerName || '').toLowerCase() === nameLower
             );
@@ -1509,6 +2504,7 @@ class ScoutFundraiserApp {
                 </div>
                 <div class="sale-right">
                     <div class="sale-amount">${progress.toFixed(0)}%</div>
+                    ${canManageScouts ? `<button type="button" class="btn btn-danger btn-small" data-action="delete-scout" data-scout-id="${scout.id}">Delete</button>` : ''}
                 </div>
             </div>`;
         });
@@ -1521,21 +2517,22 @@ class ScoutFundraiserApp {
         const container = document.getElementById('leaderboard');
         if (!container) return;
 
-        if (!this.scouts || this.scouts.length === 0) {
+        const salesPool = this.allSales || this.sales || [];
+        const derivedScouts = this.getDerivedScoutsFromSales(salesPool);
+        const scoutsForDisplay = (this.scouts && this.scouts.length > 0) ? this.scouts : derivedScouts;
+
+        if (!scoutsForDisplay || scoutsForDisplay.length === 0) {
             container.innerHTML = '<div class="empty-state"><p>Add scouts to see the leaderboard</p></div>';
             return;
         }
 
-        // Use allSales (from all users) so leaderboard reflects the whole troop
-        const salesPool = this.allSales || this.sales || [];
-
-        const ranked = this.scouts.map(scout => {
-            const nameLower = scout.name.toLowerCase();
+        const ranked = scoutsForDisplay.map(scout => {
+            const nameLower = (scout.name || '').toLowerCase();
             const scoutSales = salesPool.filter(s =>
                 (s.scoutName || s.customerName || '').toLowerCase() === nameLower
             );
             const totalRaised = scoutSales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
-            const cardsSold = scoutSales.filter(s => s.type === 'card').length;
+            const cardsSold = scoutSales.reduce((sum, s) => sum + getCardQtyFromSale(s, this.settings && this.settings.cardPrice), 0);
             return { ...scout, totalRaised, cardsSold };
         }).sort((a, b) => b.totalRaised - a.totalRaised);
 
@@ -1555,31 +2552,609 @@ class ScoutFundraiserApp {
         container.innerHTML = html;
     }
 
+    getDerivedScoutsFromSales(salesPool = []) {
+        const unique = new Map();
+        (salesPool || []).forEach(sale => {
+            const rawName = (sale && (sale.scoutName || sale.customerName || '') || '').trim();
+            if (!rawName) return;
+            const key = rawName.toLowerCase();
+            if (unique.has(key)) return;
+            unique.set(key, {
+                id: `derived-${key.replace(/[^a-z0-9]+/g, '-')}`,
+                name: rawName,
+                goal: Number((this.settings && this.settings.fundraisingGoal) || 2000)
+            });
+        });
+        return Array.from(unique.values());
+    }
+
+    // ==================== COMMUNICATION ====================
+
+    buildCommunicationPayload() {
+        const scoutName = (this.currentUser.displayName || 'Scout').trim();
+        const personalGoal = Number(this.currentProfile && this.currentProfile.personalGoal);
+        const goal = Number.isFinite(personalGoal) && personalGoal > 0
+            ? personalGoal
+            : ((this.settings && this.settings.fundraisingGoal) || 5000);
+        const raised = this.sales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        const progressPct = goal > 0 ? Math.min((raised / goal) * 100, 100) : 0;
+
+        const base = (this.settings && this.settings.donationBaseUrl)
+            ? this.settings.donationBaseUrl
+            : `${window.location.origin}${window.location.pathname}`;
+        const donationUrl = `${base}?unit=${encodeURIComponent(this.currentUnitId)}&scout=${encodeURIComponent(this.currentUser.uid)}`;
+        const message = `Hi! This is ${scoutName}. I'm fundraising with my scout unit and working toward my goal of ${formatMoney(goal)}. I've reached ${progressPct.toFixed(1)}% so far (${formatMoney(raised)}). You can support me here: ${donationUrl}`;
+
+        return { donationUrl, message, scoutName, goal, raised, progressPct };
+    }
+
+    setupCommunicationPage() {
+        const copyLinkBtn = document.getElementById('comm-copy-link');
+        const copyMsgBtn = document.getElementById('comm-copy-message');
+        const emailBtn = document.getElementById('comm-email');
+        const smsBtn = document.getElementById('comm-sms');
+        const shareBtn = document.getElementById('comm-share');
+
+        if (copyLinkBtn) {
+            copyLinkBtn.addEventListener('click', async () => {
+                const payload = this.buildCommunicationPayload();
+                await navigator.clipboard.writeText(payload.donationUrl);
+                await appleAlert('Copied', 'Share link copied to clipboard.');
+            });
+        }
+
+        if (copyMsgBtn) {
+            copyMsgBtn.addEventListener('click', async () => {
+                const payload = this.buildCommunicationPayload();
+                const messageEl = document.getElementById('comm-message');
+                const text = (messageEl && messageEl.value) || payload.message;
+                await navigator.clipboard.writeText(text);
+                await appleAlert('Copied', 'Message copied to clipboard.');
+            });
+        }
+
+        if (emailBtn) {
+            emailBtn.addEventListener('click', () => {
+                const payload = this.buildCommunicationPayload();
+                const subject = encodeURIComponent('Support My Scout Fundraiser');
+                const body = encodeURIComponent((document.getElementById('comm-message').value || payload.message));
+                window.location.href = `mailto:?subject=${subject}&body=${body}`;
+            });
+        }
+
+        if (smsBtn) {
+            smsBtn.addEventListener('click', () => {
+                const payload = this.buildCommunicationPayload();
+                const body = encodeURIComponent((document.getElementById('comm-message').value || payload.message));
+                window.location.href = `sms:?body=${body}`;
+            });
+        }
+
+        if (shareBtn) {
+            shareBtn.addEventListener('click', async () => {
+                const payload = this.buildCommunicationPayload();
+                const text = (document.getElementById('comm-message').value || payload.message);
+                if (navigator.share) {
+                    try {
+                        await navigator.share({ title: 'Support My Scout Fundraiser', text, url: payload.donationUrl });
+                        return;
+                    } catch (_e) {
+                        // fallback below
+                    }
+                }
+                await navigator.clipboard.writeText(text);
+                await appleAlert('Copied', 'Sharing is not supported on this browser. Message copied to clipboard.');
+            });
+        }
+    }
+
+    refreshCommunicationPage() {
+        const payload = this.buildCommunicationPayload();
+        const linkEl = document.getElementById('comm-link');
+        const msgEl = document.getElementById('comm-message');
+        const qrContainer = document.getElementById('comm-qr');
+
+        if (linkEl) linkEl.value = payload.donationUrl;
+        if (msgEl && !msgEl.value) msgEl.value = payload.message;
+
+        if (qrContainer) {
+            if (typeof qrcode !== 'undefined') {
+                const qr = qrcode(0, 'M');
+                qr.addData(payload.donationUrl);
+                qr.make();
+                qrContainer.innerHTML = qr.createImgTag(5, 6);
+            } else {
+                qrContainer.innerHTML = '<p class="step-note">QR generator unavailable.</p>';
+            }
+        }
+    }
+
+    // ==================== OPERATIONS ====================
+
+    setupOperationsPage() {
+        const productForm = document.getElementById('product-form');
+        const productList = document.getElementById('product-list');
+        const addLineBtn = document.getElementById('order-add-line');
+        const submitOrderBtn = document.getElementById('order-submit');
+        const exportBtn = document.getElementById('export-closeout-csv');
+
+        if (productForm) {
+            productForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!this.canAccessOperations()) {
+                    await appleAlert('Restricted', 'Only unit leaders and admins can use Operations.');
+                    return;
+                }
+
+                const name = document.getElementById('product-name').value.trim();
+                const sku = document.getElementById('product-sku').value.trim();
+                const price = Number(document.getElementById('product-price').value);
+                const stock = Number(document.getElementById('product-stock').value);
+                const active = !!document.getElementById('product-active').checked;
+
+                if (!name || !sku || !Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || stock < 0) {
+                    await appleAlert('Invalid Product', 'Enter name, SKU, valid price, and stock.');
+                    return;
+                }
+
+                try {
+                    await addProductToFirestore(this.currentUnitId, this.currentUser.uid, {
+                        name,
+                        sku,
+                        unitPrice: price,
+                        stockOnHand: Math.floor(stock),
+                        active,
+                        lowStockThreshold: 5
+                    });
+                    productForm.reset();
+                    document.getElementById('product-active').checked = true;
+                    this.products = await getProductsFromFirestore(this.currentUnitId);
+                    this.refreshOperationsPage();
+                } catch (err) {
+                    const code = err && err.code ? String(err.code) : '';
+                    if (code.includes('permission-denied')) {
+                        await appleAlert('Permission Denied', 'Your account role is not allowed to add products in this unit.');
+                    } else {
+                        await appleAlert('Save Failed', 'Could not add product. Please try again.');
+                    }
+                }
+            });
+        }
+
+        if (productList) {
+            productList.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-action="adjust-stock"]');
+                if (!btn) return;
+                if (!this.canAccessOperations()) {
+                    await appleAlert('Restricted', 'Only unit leaders and admins can use Operations.');
+                    return;
+                }
+
+                const productId = btn.dataset.productId;
+                const input = document.getElementById(`stock-adjust-${productId}`);
+                const adjustment = Number(input && input.value);
+                if (!Number.isFinite(adjustment)) return;
+
+                const product = this.products.find(p => p.id === productId);
+                if (!product) return;
+                const nextStock = Math.max(0, (Number(product.stockOnHand) || 0) + Math.floor(adjustment));
+                const saved = await saveProductToFirestore(this.currentUnitId, productId, { stockOnHand: nextStock });
+                if (!saved) {
+                    await appleAlert('Save Failed', 'Could not update stock.');
+                    return;
+                }
+                this.products = await getProductsFromFirestore(this.currentUnitId);
+                this.refreshOperationsPage();
+            });
+        }
+
+        if (addLineBtn) addLineBtn.addEventListener('click', () => this.addOrderDraftLine());
+        if (submitOrderBtn) submitOrderBtn.addEventListener('click', () => this.submitOrderDraft());
+        if (exportBtn) exportBtn.addEventListener('click', () => this.exportCloseoutCsv());
+    }
+
+    refreshOperationsPage() {
+        const productForm = document.getElementById('product-form');
+        if (productForm) {
+            productForm.classList.toggle('hidden', !this.canAccessOperations());
+        }
+        this.renderProductList();
+        this.populateOrderProductOptions();
+        this.renderOrderDraft();
+        this.renderOrdersList();
+        this.renderCloseoutSummary();
+    }
+
+    populateOrderProductOptions() {
+        const select = document.getElementById('order-product');
+        if (!select) return;
+
+        const activeProducts = (this.products || []).filter(p => p.active !== false);
+        if (activeProducts.length === 0) {
+            select.innerHTML = '<option value="">No active products</option>';
+            return;
+        }
+
+        select.innerHTML = activeProducts.map(p =>
+            `<option value="${p.id}">${escapeHTML(p.name)} (${escapeHTML(p.sku)}) - ${formatMoney(p.unitPrice)} | Stock: ${Number(p.stockOnHand) || 0}</option>`
+        ).join('');
+    }
+
+    renderProductList() {
+        const container = document.getElementById('product-list');
+        if (!container) return;
+        if (!this.products || this.products.length === 0) {
+            container.innerHTML = '<div class="empty-state"><p>No products added yet.</p></div>';
+            return;
+        }
+
+        container.innerHTML = this.products.map(product => {
+            const stock = Number(product.stockOnHand) || 0;
+            const low = stock <= (Number(product.lowStockThreshold) || 5);
+            return `<div class="sale-item">
+                <div class="sale-info">
+                    <h5>${escapeHTML(product.name)} (${escapeHTML(product.sku || '')})</h5>
+                    <p>Price: ${formatMoney(product.unitPrice)} &bull; Stock: ${stock} ${low ? '&bull; LOW STOCK' : ''}</p>
+                </div>
+                <div class="sale-right">
+                    <input type="number" id="stock-adjust-${product.id}" value="0" style="width:80px;" />
+                    <button type="button" class="btn btn-secondary btn-small" data-action="adjust-stock" data-product-id="${product.id}">Adjust</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    addOrderDraftLine() {
+        if (!this.canAccessOperations()) {
+            return;
+        }
+        const productId = document.getElementById('order-product').value;
+        const qty = Number(document.getElementById('order-qty').value);
+        if (!productId || !Number.isFinite(qty) || qty <= 0) return;
+
+        const product = (this.products || []).find(p => p.id === productId);
+        if (!product) return;
+
+        this.orderDraftLines.push({
+            productId,
+            name: product.name,
+            sku: product.sku,
+            qty: Math.floor(qty),
+            unitPrice: Number(product.unitPrice) || 0,
+            lineTotal: (Number(product.unitPrice) || 0) * Math.floor(qty)
+        });
+        this.renderOrderDraft();
+    }
+
+    renderOrderDraft() {
+        const container = document.getElementById('order-lines');
+        if (!container) return;
+
+        if (!this.orderDraftLines || this.orderDraftLines.length === 0) {
+            container.innerHTML = '<p class="step-note">No order lines yet.</p>';
+            return;
+        }
+
+        const draftLines = this.orderDraftLines || [];
+        const total = draftLines.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+        container.innerHTML = draftLines.map((line, idx) =>
+            `<div class="activity-item"><div class="activity-details"><div class="activity-title">${escapeHTML(line.name)} x${line.qty}</div><div class="activity-meta">${formatMoney(line.unitPrice)} each</div></div><div class="sale-amount">${formatMoney(line.lineTotal)}</div><button type="button" class="btn btn-danger btn-small" onclick="window.scoutApp.removeOrderDraftLine(${idx})">Remove</button></div>`
+        ).join('') + `<div class="quick-summary">Order Total: ${formatMoney(total)}</div>`;
+    }
+
+    removeOrderDraftLine(index) {
+        if (!Array.isArray(this.orderDraftLines)) return;
+        this.orderDraftLines.splice(index, 1);
+        this.renderOrderDraft();
+    }
+
+    async submitOrderDraft() {
+        if (!this.canAccessOperations()) {
+            await appleAlert('Restricted', 'Only unit leaders and admins can use Operations.');
+            return;
+        }
+
+        if (!this.orderDraftLines || this.orderDraftLines.length === 0) {
+            await appleAlert('No Items', 'Add at least one product line first.');
+            return;
+        }
+
+        const productsById = new Map((this.products || []).map(p => [p.id, p]));
+        for (const line of this.orderDraftLines) {
+            const product = productsById.get(line.productId);
+            const stock = Number(product && product.stockOnHand) || 0;
+            if (line.qty > stock) {
+                await appleAlert('Insufficient Stock', `Not enough stock for ${line.name}. Available: ${stock}.`);
+                return;
+            }
+        }
+
+        const paymentProcessor = document.getElementById('order-payment-processor').value;
+        const paymentTransactionId = document.getElementById('order-txid').value.trim();
+        const total = this.orderDraftLines.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+
+        for (const line of this.orderDraftLines) {
+            const product = productsById.get(line.productId);
+            const nextStock = Math.max(0, (Number(product.stockOnHand) || 0) - Number(line.qty));
+            const ok = await saveProductToFirestore(this.currentUnitId, line.productId, { stockOnHand: nextStock });
+            if (!ok) {
+                await appleAlert('Inventory Error', `Could not update inventory for ${line.name}.`);
+                return;
+            }
+        }
+
+        await addOrderToFirestore(this.currentUnitId, this.currentUser.uid, {
+            scoutName: (this.currentUser.displayName || '').trim() || this.currentUser.email,
+            lines: this.orderDraftLines,
+            total,
+            status: 'submitted',
+            paymentProcessor,
+            paymentTransactionId,
+            paymentStatus: paymentProcessor === 'manual' ? 'received' : (paymentTransactionId ? 'received' : 'pending')
+        });
+
+        this.orderDraftLines = [];
+        document.getElementById('order-txid').value = '';
+        this.products = await getProductsFromFirestore(this.currentUnitId);
+        this.orders = await getOrdersFromFirestore(this.currentUnitId);
+        this.refreshOperationsPage();
+        await appleAlert('Order Submitted', 'Product order saved and inventory updated.');
+    }
+
+    renderOrdersList() {
+        const container = document.getElementById('orders-list');
+        if (!container) return;
+        if (!this.orders || this.orders.length === 0) {
+            container.innerHTML = '<div class="empty-state"><p>No submitted orders yet.</p></div>';
+            return;
+        }
+
+        const sorted = [...this.orders].sort((a, b) => {
+            const aMs = a.submittedAt && a.submittedAt.seconds ? a.submittedAt.seconds * 1000 : 0;
+            const bMs = b.submittedAt && b.submittedAt.seconds ? b.submittedAt.seconds * 1000 : 0;
+            return bMs - aMs;
+        });
+
+        container.innerHTML = `<h4 style="margin-top:1rem;">Recent Orders</h4>` + sorted.map(order => {
+            const lineCount = Array.isArray(order.lines) ? order.lines.length : 0;
+            return `<div class="sale-item"><div class="sale-info"><h5>${escapeHTML(order.scoutName || 'Scout')}</h5><p>${lineCount} lines &bull; ${escapeHTML(order.status || 'submitted')} &bull; ${escapeHTML(order.paymentProcessor || 'manual')}</p></div><div class="sale-right"><div class="sale-amount">${formatMoney(order.total)}</div></div></div>`;
+        }).join('');
+    }
+
+    renderCloseoutSummary() {
+        const masterOrderEl = document.getElementById('master-order');
+        const reconEl = document.getElementById('recon-summary');
+        if (!masterOrderEl || !reconEl) return;
+
+        const aggregate = {};
+        (this.orders || []).forEach(order => {
+            (order.lines || []).forEach(line => {
+                if (!aggregate[line.productId]) {
+                    aggregate[line.productId] = {
+                        product: line.name,
+                        sku: line.sku,
+                        qty: 0,
+                        total: 0
+                    };
+                }
+                aggregate[line.productId].qty += Number(line.qty) || 0;
+                aggregate[line.productId].total += Number(line.lineTotal) || 0;
+            });
+        });
+
+        const rows = Object.values(aggregate);
+        if (rows.length === 0) {
+            masterOrderEl.innerHTML = '<p class="step-note">No order lines available for master order.</p>';
+        } else {
+            masterOrderEl.innerHTML = `<h4>Master Order (Supplier)</h4>` + rows.map(r =>
+                `<div class="activity-item"><div class="activity-details"><div class="activity-title">${escapeHTML(r.product)} (${escapeHTML(r.sku || '')})</div><div class="activity-meta">Qty: ${r.qty}</div></div><div class="sale-amount">${formatMoney(r.total)}</div></div>`
+            ).join('');
+        }
+
+        const salesPool = this.allSales || this.sales || [];
+        const totalSales = salesPool.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        const totalOrders = (this.orders || []).reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+        const pendingDigital = (this.orders || []).filter(o => o.paymentStatus === 'pending').reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+        reconEl.innerHTML = `<h4>Financial Reconciliation</h4>
+            <div class="quick-summary">
+                Sales/Donations Logged: ${formatMoney(totalSales)} | Product Orders: ${formatMoney(totalOrders)} | Pending Processor Funds: ${formatMoney(pendingDigital)}
+            </div>`;
+    }
+
+    exportCloseoutCsv() {
+        const orderRows = [];
+        (this.orders || []).forEach(order => {
+            (order.lines || []).forEach(line => {
+                orderRows.push({
+                    scout: order.scoutName || '',
+                    status: order.status || '',
+                    paymentProcessor: order.paymentProcessor || '',
+                    paymentStatus: order.paymentStatus || '',
+                    product: line.name || '',
+                    sku: line.sku || '',
+                    qty: line.qty || 0,
+                    unitPrice: line.unitPrice || 0,
+                    lineTotal: line.lineTotal || 0
+                });
+            });
+        });
+
+        if (orderRows.length === 0) {
+            appleAlert('No Data', 'No order rows to export yet.');
+            return;
+        }
+
+        const csv = toCsv(orderRows);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `closeout-${this.currentUnitId || 'unit'}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
     // ==================== ADMIN / SETTINGS ====================
 
     setupSettingsPage() {
         // Profile display
         const name = this.currentUser.displayName || 'Scout';
         const email = this.currentUser.email || '';
+        const roleDisplay = this.currentRole.charAt(0).toUpperCase() + this.currentRole.slice(1);
         document.getElementById('admin-name').textContent = name;
         document.getElementById('admin-email').textContent = email;
+        document.getElementById('admin-role').textContent = `Role: ${roleDisplay}`;
         document.getElementById('admin-avatar').textContent = name.charAt(0).toUpperCase();
 
         // Fundraising settings
         document.getElementById('fundraising-goal').value = this.settings.fundraisingGoal || 5000;
-        document.getElementById('card-price').value = this.settings.cardPrice || 20;
+        document.getElementById('card-price').value = this.settings.cardPrice || 10;
+        document.getElementById('donation-base-url').value = this.settings.donationBaseUrl || '';
+        document.getElementById('default-payment-processor').value = this.settings.defaultPaymentProcessor || 'manual';
 
-        document.getElementById('fundraising-goal').addEventListener('change', async () => {
-            this.settings.fundraisingGoal = Number(document.getElementById('fundraising-goal').value) || 5000;
-            await saveSettingsToFirestore(this.currentUser.uid, this.settings);
-            this.refreshDashboard();
-        });
+        const canManageFundraisingSettings = this.currentRole === 'leader' || this.currentRole === 'admin';
+        const fundraisingSettingsCard = document.getElementById('fundraising-settings-card');
+        if (fundraisingSettingsCard) {
+            fundraisingSettingsCard.classList.toggle('hidden', !canManageFundraisingSettings);
+        }
 
-        document.getElementById('card-price').addEventListener('change', async () => {
-            this.settings.cardPrice = Number(document.getElementById('card-price').value) || 20;
-            await saveSettingsToFirestore(this.currentUser.uid, this.settings);
-            this.quickFields.price.value = this.settings.cardPrice;
-        });
+        const fundraisingGoalInput = document.getElementById('fundraising-goal');
+        const fundraisingGoalGroup = fundraisingGoalInput ? fundraisingGoalInput.closest('.form-group') : null;
+        if (fundraisingGoalGroup) {
+            fundraisingGoalGroup.classList.toggle('hidden', !canManageFundraisingSettings);
+        }
+
+        // Unit Admin: control which pages are visible for other roles
+        const pageVisibilityCard = document.getElementById('page-visibility-card');
+        const pageVisibilityControls = document.getElementById('page-visibility-controls');
+        const isUnitAdmin = this.currentRole === 'admin';
+        if (pageVisibilityCard) {
+            pageVisibilityCard.classList.toggle('hidden', !isUnitAdmin);
+        }
+        if (isUnitAdmin && pageVisibilityControls) {
+            const roles = [
+                { key: 'leader', label: 'Unit Leader', pages: ['quicklog', 'dashboard', 'sales', 'scouts', 'operations'] },
+                { key: 'scout', label: 'Scout', pages: ['quicklog', 'dashboard', 'sales', 'scouts', 'communication'] },
+                { key: 'parent', label: 'Parent/Guardian', pages: ['quicklog', 'dashboard', 'sales', 'scouts'] }
+            ];
+            const pageLabels = {
+                quicklog: 'Quick Log',
+                dashboard: 'Dashboard',
+                sales: 'Sales',
+                scouts: 'Scouts',
+                operations: 'Operations',
+                communication: 'Communication'
+            };
+
+            // Normalize state so unchecked/undefined never breaks
+            this.unitPageVisibility = mergeUnitPageVisibility(this.unitPageVisibility);
+
+            pageVisibilityControls.innerHTML = roles.map(role => {
+                const rows = role.pages.map(page => {
+                    const id = `pv-${role.key}-${page}`;
+                    const statusId = `pv-${role.key}-${page}-label`;
+                    const visible = !(this.unitPageVisibility[role.key] && this.unitPageVisibility[role.key][page] === false);
+                    return `
+                        <div class="field-control-row">
+                            <span class="field-control-name">${escapeHTML(role.label)}: ${escapeHTML(pageLabels[page] || page)}</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="${id}" ${visible ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="toggle-status" id="${statusId}">${visible ? 'Visible' : 'Hidden'}</span>
+                        </div>
+                    `;
+                }).join('');
+                return `<div style="margin-top:0.5rem;">${rows}</div>`;
+            }).join('');
+
+            roles.forEach(role => {
+                role.pages.forEach(page => {
+                    const id = `pv-${role.key}-${page}`;
+                    const statusId = `pv-${role.key}-${page}-label`;
+                    const el = document.getElementById(id);
+                    const statusEl = document.getElementById(statusId);
+                    if (!el) return;
+                    el.addEventListener('change', async () => {
+                        const visible = !!el.checked;
+                        this.unitPageVisibility = mergeUnitPageVisibility(this.unitPageVisibility);
+                        this.unitPageVisibility[role.key][page] = visible;
+                        if (statusEl) statusEl.textContent = visible ? 'Visible' : 'Hidden';
+                        this.applyNavigationVisibility();
+
+                        try {
+                            await saveUnitPageVisibilityToFirestore(this.currentUnitId, this.unitPageVisibility);
+                        } catch (e) {
+                            console.error('Error saving page visibility:', e);
+                            await appleAlert('Save Failed', 'Could not save page visibility settings.');
+                        }
+                    });
+                });
+            });
+        }
+
+        const personalGoalInput = document.getElementById('personal-goal');
+        if (personalGoalInput) {
+            const currentGoal = Number(this.currentProfile && this.currentProfile.personalGoal);
+            personalGoalInput.value = Number.isFinite(currentGoal) && currentGoal > 0 ? currentGoal : '';
+            personalGoalInput.addEventListener('change', async () => {
+                const value = Number(personalGoalInput.value);
+                if (!Number.isFinite(value) || value <= 0) {
+                    await appleAlert('Invalid Goal', 'Enter a valid personal goal greater than zero.');
+                    personalGoalInput.value = Number.isFinite(currentGoal) && currentGoal > 0 ? currentGoal : '';
+                    return;
+                }
+
+                const saved = await savePersonalGoalForUser(this.currentUser.uid, value);
+                if (!saved) {
+                    await appleAlert('Save Failed', 'Could not save personal goal. Please try again.');
+                    return;
+                }
+
+                this.currentProfile = {
+                    ...(this.currentProfile || {}),
+                    personalGoal: value,
+                    goalSetupComplete: true
+                };
+                this.refreshDashboard();
+            });
+        }
+
+        if (canManageFundraisingSettings) {
+            document.getElementById('fundraising-goal').addEventListener('change', async () => {
+                this.settings.fundraisingGoal = Number(document.getElementById('fundraising-goal').value) || 5000;
+                await saveSettingsToFirestore(this.currentUser.uid, this.settings);
+                this.refreshDashboard();
+            });
+
+            document.getElementById('card-price').addEventListener('change', async () => {
+                this.settings.cardPrice = Number(document.getElementById('card-price').value) || 10;
+                await saveSettingsToFirestore(this.currentUser.uid, this.settings);
+                this.quickFields.price.value = this.settings.cardPrice;
+            });
+
+            document.getElementById('donation-base-url').addEventListener('change', async () => {
+                const urlValue = document.getElementById('donation-base-url').value.trim();
+
+                // Validate URL format
+                if (urlValue && !isValidUrl(urlValue)) {
+                    await appleAlert('Invalid URL', 'Please enter a valid URL starting with http:// or https://');
+                    document.getElementById('donation-base-url').value = this.settings.donationBaseUrl || '';
+                    return;
+                }
+
+                this.settings.donationBaseUrl = urlValue;
+                await saveSettingsToFirestore(this.currentUser.uid, this.settings);
+            });
+
+            document.getElementById('default-payment-processor').addEventListener('change', async () => {
+                this.settings.defaultPaymentProcessor = document.getElementById('default-payment-processor').value;
+                await saveSettingsToFirestore(this.currentUser.uid, this.settings);
+            });
+        }
 
         // Payment handles + lock toggles
         const handles = (this.settings.paymentHandles) || {};
