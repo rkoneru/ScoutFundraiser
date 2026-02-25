@@ -1,7 +1,7 @@
 module.exports = {
   testEnvironment: 'jsdom',
   collectCoverageFrom: [
-    'app.js',
+    'app.test.js',
     '!node_modules/**',
     '!coverage/**'
   ],

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#003366">
+    <meta name="msapplication-TileColor" content="#003366">
     <meta name="description" content="Troop 242 Scout Fundraiser - Sales & Donation Tracker">
     <!-- SECURITY FIX: Content Security Policy to prevent XSS attacks -->
     <meta http-equiv="Content-Security-Policy" content="
@@ -24,7 +24,7 @@
 </head>
 <body>
     <!-- SVG Icon Sprite (hidden) -->
-    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <svg xmlns="http://www.w3.org/2000/svg" class="svg-hidden">
         <!-- Lightning Bolt - Electric Blue -->
         <symbol id="icon-zap" viewBox="0 0 24 24">
             <path fill="#0A84FF" d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
@@ -183,11 +183,11 @@
                     </select>
                 </div>
                 <div class="form-group hidden" id="signup-create-unit-group">
-                    <label class="toggle-switch" style="display:inline-flex;align-items:center;gap:0.5rem;">
-                        <input type="checkbox" id="signup-create-unit" checked>
+                    <label class="toggle-switch toggle-switch-wrapper" title="Check to create a new unit for this admin account">
+                        <input type="checkbox" id="signup-create-unit" checked aria-label="Create a new unit">
                         <span class="toggle-slider"></span>
+                        <span class="toggle-status">Create a new unit</span>
                     </label>
-                    <span class="toggle-status" style="margin-left:0.5rem;">Create a new unit</span>
                 </div>
                 <div class="form-group hidden" id="signup-troop-name-group">
                     <label for="signup-troop-name">Unit Name</label>
@@ -272,14 +272,14 @@
                     <div class="type-toggle">
                         <button type="button" class="type-toggle-btn active" data-type="card" id="type-btn-card">
                             <span class="type-toggle-icon"><svg class="icon"><use href="#icon-card"/></svg></span>
-                            <span class="type-toggle-label">Scout Card</span>
+                            <span class="type-toggle-label" id="type-btn-card-label">Scout Card</span>
                         </button>
                         <button type="button" class="type-toggle-btn" data-type="donation" id="type-btn-donation">
                             <span class="type-toggle-icon"><svg class="icon"><use href="#icon-heart"/></svg></span>
                             <span class="type-toggle-label">Donation</span>
                         </button>
                     </div>
-                    <select id="quick-type" class="hidden" required>
+                    <select id="quick-type" class="hidden" required title="Select transaction type">
                         <option value="card">Scout Card</option>
                         <option value="donation">Donation</option>
                     </select>
@@ -299,13 +299,17 @@
                         <input type="text" id="quick-scout" placeholder="Customer name" required>
                     </div>
                     <div id="quick-card-fields">
+                        <div class="form-group" hidden>
+                            <label for="quick-product">Product (Set by Admin in Operations)</label>
+                            <input type="text" id="quick-product" readonly placeholder="Scout Cards" class="form-input-highlighted">
+                        </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="quick-qty">Number of cards</label>
+                                <label for="quick-qty">Quantity</label>
                                 <input type="number" id="quick-qty" min="1" step="1" value="1">
                             </div>
                             <div class="form-group">
-                                <label for="quick-price">Price per card ($)</label>
+                                <label for="quick-price">Unit Price ($)</label>
                                 <input type="number" id="quick-price" min="0" step="0.01" value="10" readonly>
                             </div>
                         </div>
@@ -324,6 +328,7 @@
                             <label for="quick-payment">Payment method</label>
                             <select id="quick-payment" required>
                                 <option value="Cash">Cash</option>
+                                <option value="CreditCard">Credit Card</option>
                                 <option value="CashApp">Cash App</option>
                                 <option value="Zelle">Zelle</option>
                                 <option value="Venmo">Venmo</option>
@@ -345,7 +350,7 @@
                 </div>
 
                 <!-- Hidden QR elements (referenced by JS) -->
-                <video id="qr-video" class="hidden" playsinline></video>
+                <video id="qr-video" class="hidden video-element"></video>
                 <canvas id="qr-canvas" class="hidden"></canvas>
                 <input type="hidden" id="qr-text">
             </section>
@@ -383,7 +388,7 @@
                             <span id="goal-pct">0%</span>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress-fill" id="goal-progress" style="width: 0%"></div>
+                            <div class="progress-fill" id="goal-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Goal progress bar"></div>
                         </div>
                         <div class="progress-text" id="goal-progress-text">$0.00 of $5,000.00</div>
                     </div>
@@ -393,14 +398,15 @@
                     <h3>All Transactions</h3>
                     <div class="search-bar">
                         <input type="text" id="dash-sales-search" placeholder="Search Scouts...">
-                        <select id="dash-sales-filter-type">
+                        <select id="dash-sales-filter-type" title="Filter transactions by type" aria-label="Filter transactions by type">
                             <option value="all">All Types</option>
                             <option value="card">Scout Card</option>
                             <option value="donation">Donation</option>
                         </select>
-                        <select id="dash-sales-filter-payment">
+                        <select id="dash-sales-filter-payment" title="Filter transactions by payment method" aria-label="Filter transactions by payment method">
                             <option value="all">All Payments</option>
                             <option value="Cash">Cash</option>
+                            <option value="CreditCard">Credit Card</option>
                             <option value="Zelle">Zelle</option>
                             <option value="Venmo">Venmo</option>
                             <option value="CashApp">CashApp</option>
@@ -445,6 +451,7 @@
                             <label for="sale-payment">Payment Method</label>
                             <select id="sale-payment" required>
                                 <option value="Cash">Cash</option>
+                                <option value="CreditCard">Credit Card</option>
                                 <option value="Zelle">Zelle</option>
                                 <option value="Venmo">Venmo</option>
                                 <option value="CashApp">CashApp</option>
@@ -473,17 +480,18 @@
                     <h3>All Transactions</h3>
                     <div class="search-bar">
                         <input type="text" id="sales-search" placeholder="Search sales...">
-                        <select id="sales-filter-scout" class="hidden">
+                        <select id="sales-filter-scout" class="hidden" aria-label="Filter sales by scout">
                             <option value="all">All Scouts</option>
                         </select>
-                        <select id="sales-filter-type">
+                        <select id="sales-filter-type" aria-label="Filter sales by type">
                             <option value="all">All Types</option>
                             <option value="card">Scout Card</option>
                             <option value="donation">Donation</option>
                         </select>
-                        <select id="sales-filter-payment">
+                        <select id="sales-filter-payment" title="Filter transactions by payment method">
                             <option value="all">All Payments</option>
                             <option value="Cash">Cash</option>
+                            <option value="CreditCard">Credit Card</option>
                             <option value="Zelle">Zelle</option>
                             <option value="Venmo">Venmo</option>
                             <option value="CashApp">CashApp</option>
@@ -558,6 +566,7 @@
                         <div class="form-group">
                             <label for="qr-payment">Payment Method</label>
                             <select id="qr-payment" required>
+                                <option value="CreditCard">Credit Card</option>
                                 <option value="Venmo">Venmo</option>
                                 <option value="CashApp">CashApp</option>
                                 <option value="Zelle">Zelle</option>
@@ -628,52 +637,94 @@
                     <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
                 </div>
 
-                <div class="card">
-                    <h3>Products & Inventory</h3>
-                    <form id="product-form" class="form-row">
+                <div class="card info-box-blue">
+                    <h3>🎯 Active Sales Product (Leader/Admin Only)</h3>
+                    <div class="form-row max-width-600">
                         <div class="form-group">
-                            <label for="product-name">Product Name</label>
-                            <input type="text" id="product-name" placeholder="Popcorn Tin">
-                        </div>
-                        <div class="form-group">
-                            <label for="product-sku">SKU</label>
-                            <input type="text" id="product-sku" placeholder="POPCORN-TIN">
-                        </div>
-                        <div class="form-group">
-                            <label for="product-price">Unit Price ($)</label>
-                            <input type="number" id="product-price" min="0" step="0.01" placeholder="20">
+                            <label for="ops-active-product">Select Product for Quick Log</label>
+                            <select id="ops-active-product" class="form-select-styled">
+                                <option value="scout-cards">💳 Scout Cards - $10</option>
+                                <option value="popcorn">🍿 Popcorn - $25</option>
+                                <option value="car-wash">🚗 Car Wash - $15</option>
+                                <option value="girl-scout-biscuits">🍪 Girl Scout Biscuits - $18</option>
+                            </select>
                         </div>
                         <div class="form-group">
-                            <label for="product-stock">Stock On Hand</label>
-                            <input type="number" id="product-stock" min="0" step="1" placeholder="100">
+                            <label for="ops-product-stock">Current Stock</label>
+                            <input type="number" id="ops-product-stock" readonly class="form-input-disabled">
                         </div>
-                        <div class="form-group">
-                            <label class="toggle-switch" style="display:inline-flex;align-items:center;gap:0.5rem;">
-                                <input type="checkbox" id="product-active" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
-                            <span class="toggle-status" style="margin-left:0.5rem;">Active Product</span>
+                        <div class="form-group hidden align-self-end">
+                            <button type="button" class="btn btn-danger btn-small" id="ops-delete-product-sales" title="Delete all sales of this product">Delete Product Sales</button>
                         </div>
-                        <div class="form-group" style="align-self:end;">
-                            <button type="submit" class="btn btn-primary">Add Product</button>
-                        </div>
-                    </form>
-                    <div id="product-list"></div>
+                    </div>
+                    <p class="text-info-small">✓ Scouts will see this product in Quick Log · ✓ Inventory auto-deducts on sale</p>
                 </div>
 
                 <div class="card">
-                    <h3>Submit Product Order</h3>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="order-product">Product</label>
-                            <select id="order-product"></select>
+                    <h3>Products & Inventory</h3>
+                    <!-- Hardcoded Active Product Display (Session 8B) -->
+                    <div id="active-product-display" class="info-box-blue">
+                        <!-- Row 1: Product Info -->
+                        <div class="product-info-grid">
+                            <div>
+                                <label class="product-info-label">Product Name</label>
+                                <input type="text" id="display-product-name" readonly class="product-info-input" title="Product Name">
+                            </div>
+                            <div>
+                                <label for="display-product-sku" class="product-field-label">SKU</label>
+                                <input type="text" id="display-product-sku" readonly class="product-field-input" title="Product SKU">
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="order-qty">Quantity</label>
-                            <input type="number" id="order-qty" min="1" step="1" value="1">
+                        <!-- Row 2: Stock Adjustment -->
+                        <div class="stock-adjustment-grid">
+                            <div>
+                                <label class="stock-adjustment-label">Adjust Stock (+ to add, - to remove)</label>
+                                <input type="number" id="stock-adjustment-input" placeholder="Enter amount" class="stock-adjustment-input" title="Stock adjustment amount">
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-small stock-adjust-btn" id="stock-adjust-btn">Adjust</button> 
                         </div>
                     </div>
-                    <div class="form-row">
+                    <div id="product-list"></div>
+                </div>
+
+                <div class="card" hidden>
+                    <h3>Submit Product Order</h3>
+                    <!-- Hardcoded Active Product Display (Session 8B) -->
+                    <div class="info-box-blue">
+                        <div class="grid-2-col margin-bottom-1rem">
+                            <div>
+                                <label class="form-label-styled">Product (Set by Admin)</label>
+                                <input type="text" id="order-product-display" readonly placeholder="Scout Cards" class="form-input-readonly" aria-label="Order product">
+                            </div>
+                            <div>
+                                <label class="form-label-styled">Quantity</label>
+                                <input type="number" id="order-qty" min="1" step="1" value="1" class="form-input-styled">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Order Count Summary -->
+                    <div class="info-box-light-blue">
+                        <div class="grid-3-col">
+                            <div>
+                                <label class="form-label-styled">Total Units Ordered</label>
+                                <div class="text-display-lg" id="order-total-units">0</div>
+                            </div>
+                            <div>
+                                <label class="form-label-styled">Order Value</label>
+                                <div class="text-display-lg" id="order-total-value">$0</div>
+                            </div>
+                            <div id="order-adjust-container" class="hidden">
+                                <label class="form-label-styled">Quick Add Units</label>
+                                <div class="grid-2-col-flex">
+                                    <input type="number" id="order-quick-add" placeholder="+5" min="1" class="form-input-sm">
+                                    <button type="button" class="btn btn-secondary btn-small" id="order-quick-add-btn">Add</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-2-col">
                         <div class="form-group">
                             <label for="order-payment-processor">Payment Processor</label>
                             <select id="order-payment-processor">
@@ -687,6 +738,7 @@
                             <input type="text" id="order-txid" placeholder="ch_123 or sq0idp...">
                         </div>
                     </div>
+
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="order-add-line">Add Line</button>
                         <button type="button" class="btn btn-primary" id="order-submit">Submit Order</button>
@@ -701,6 +753,14 @@
                     <div id="recon-summary"></div>
                     <div class="action-buttons">
                         <button type="button" class="btn btn-primary" id="export-closeout-csv">Export Closeout CSV</button>
+                        <!-- <button type="button" class="btn btn-danger" id="delete-all-sales" style="display:none;" title="Permanently delete all sales (Admins only)">Delete All Sales</button> -->
+                    </div> 
+                </div>
+                <div class="card info-box-red">
+                    <h3>🔴 Data Reset & Archive (Admin Only)</h3>
+                    <p class="text-muted">⚠️ Complete campaign reset. Saves all current data to CSV backup before permanent deletion.</p>
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-danger hidden" id="reset-campaign-data" title="Delete ALL data (sales, orders, inventory) and start fresh">Reset Campaign Data</button>
                     </div>
                 </div>
             </section>
@@ -777,7 +837,7 @@
                     <div class="field-control-row">
                         <span class="field-control-name">Card Price</span>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="ctrl-price-editable">
+                            <input type="checkbox" id="ctrl-price-editable" aria-label="Allow price editing">
                             <span class="toggle-slider"></span>
                         </label>
                         <span class="toggle-status" id="ctrl-price-label">Locked</span>
@@ -785,7 +845,7 @@
                     <div class="field-control-row">
                         <span class="field-control-name">Number of Cards</span>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="ctrl-qty-editable" checked>
+                            <input type="checkbox" id="ctrl-qty-editable" checked aria-label="Allow quantity editing">
                             <span class="toggle-slider"></span>
                         </label>
                         <span class="toggle-status" id="ctrl-qty-label">Editable</span>
@@ -793,7 +853,7 @@
                     <div class="field-control-row">
                         <span class="field-control-name">Date</span>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="ctrl-date-editable" checked>
+                            <input type="checkbox" id="ctrl-date-editable" checked aria-label="Allow date editing">
                             <span class="toggle-slider"></span>
                         </label>
                         <span class="toggle-status" id="ctrl-date-label">Editable</span>
@@ -801,7 +861,7 @@
                     <div class="field-control-row">
                         <span class="field-control-name">Customer Name</span>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="ctrl-customer-editable" checked>
+                            <input type="checkbox" id="ctrl-customer-editable" checked aria-label="Allow customer name editing">
                             <span class="toggle-slider"></span>
                         </label>
                         <span class="toggle-status" id="ctrl-customer-label">Editable</span>
@@ -816,7 +876,7 @@
                             <label for="handle-zelle">Zelle</label>
                             <input type="text" id="handle-zelle" placeholder="Phone or email for Zelle">
                             <div class="handle-qr-tools">
-                                <input type="file" id="handle-qr-zelle" class="handle-qr-input" accept="image/*">
+                                <input type="file" id="handle-qr-zelle" class="handle-qr-input" accept="image/*" aria-label="Upload Zelle QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-zelle" class="handle-qr-preview hidden" alt="Zelle QR preview">
                                 <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-zelle">Remove QR</button>
@@ -824,7 +884,7 @@
                         </div>
                         <div class="handle-lock">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="lock-zelle">
+                                <input type="checkbox" id="lock-zelle" aria-label="Lock Zelle payment method">
                                 <span class="toggle-slider"></span>
                             </label>
                             <span class="lock-status" id="lock-zelle-label">Unlocked</span>
@@ -835,7 +895,7 @@
                             <label for="handle-venmo">Venmo</label>
                             <input type="text" id="handle-venmo" placeholder="@username">
                             <div class="handle-qr-tools">
-                                <input type="file" id="handle-qr-venmo" class="handle-qr-input" accept="image/*">
+                                <input type="file" id="handle-qr-venmo" class="handle-qr-input" accept="image/*" aria-label="Upload Venmo QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-venmo" class="handle-qr-preview hidden" alt="Venmo QR preview">
                                 <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-venmo">Remove QR</button>
@@ -843,7 +903,7 @@
                         </div>
                         <div class="handle-lock">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="lock-venmo">
+                                <input type="checkbox" id="lock-venmo" aria-label="Lock Venmo payment method">
                                 <span class="toggle-slider"></span>
                             </label>
                             <span class="lock-status" id="lock-venmo-label">Unlocked</span>
@@ -854,7 +914,7 @@
                             <label for="handle-cashapp">CashApp</label>
                             <input type="text" id="handle-cashapp" placeholder="$cashtag">
                             <div class="handle-qr-tools">
-                                <input type="file" id="handle-qr-cashapp" class="handle-qr-input" accept="image/*">
+                                <input type="file" id="handle-qr-cashapp" class="handle-qr-input" accept="image/*" aria-label="Upload CashApp QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-cashapp" class="handle-qr-preview hidden" alt="CashApp QR preview">
                                 <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-cashapp">Remove QR</button>
@@ -862,7 +922,7 @@
                         </div>
                         <div class="handle-lock">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="lock-cashapp">
+                                <input type="checkbox" id="lock-cashapp" aria-label="Lock CashApp payment method">
                                 <span class="toggle-slider"></span>
                             </label>
                             <span class="lock-status" id="lock-cashapp-label">Unlocked</span>
@@ -873,15 +933,15 @@
                             <label for="handle-applepay">Apple Pay</label>
                             <input type="text" id="handle-applepay" placeholder="Phone or email for Apple Pay">
                             <div class="handle-qr-tools">
-                                <input type="file" id="handle-qr-applepay" class="handle-qr-input" accept="image/*">
+                                <input type="file" id="handle-qr-applepay" class="handle-qr-input" accept="image/*" aria-label="Upload Apple Pay QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-applepay" class="handle-qr-preview hidden" alt="Apple Pay QR preview">
                                 <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-applepay">Remove QR</button>
                             </div>
                         </div>
                         <div class="handle-lock">
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="lock-applepay">
+                            <label class="toggle-switch" for="lock-applepay">
+                                <input type="checkbox" id="lock-applepay" aria-label="Lock Apple Pay handle">
                                 <span class="toggle-slider"></span>
                             </label>
                             <span class="lock-status" id="lock-applepay-label">Unlocked</span>
@@ -889,10 +949,34 @@
                     </div>
                 </div>
 
+                <div class="card">
+                    <h3>Credit Card Payment Handler</h3>
+                    <p class="step-note">Set up your credit card payment link/details. This can be a Square, Stripe, or PayPal link.</p>
+                    <div class="handle-row">
+                        <div class="form-group handle-input-group">
+                            <label for="handle-creditcard">Credit Card Link/Details</label>
+                            <input type="text" id="handle-creditcard" placeholder="Payment link or processor info">
+                            <div class="handle-qr-tools">
+                                <input type="file" id="handle-qr-creditcard" class="handle-qr-input" accept="image/*" aria-label="Upload Credit Card payment QR code image">
+                                <span class="step-note">Recommended: under 300 KB</span>
+                                <img id="handle-qr-preview-creditcard" class="handle-qr-preview hidden" alt="Credit Card QR preview">
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-creditcard">Remove QR</button>
+                            </div>
+                        </div>
+                        <div class="handle-lock">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="lock-creditcard" aria-label="Lock Credit Card payment method">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="lock-status" id="lock-creditcard-label">Unlocked</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card" id="install-app-card">
                     <h3>Install App</h3>
                     <p>Install Troop 242 Fundraiser on your device for quick access from your home screen.</p>
-                    <button type="button" class="btn btn-primary" id="install-app-btn" style="width:100%;margin-top:0.75rem;"><svg class="icon icon-btn"><use href="#icon-download"/></svg> Install App</button>
+                    <button type="button" class="btn btn-primary" id="install-app-btn"><svg class="icon icon-btn"><use href="#icon-download"/></svg> Install App</button>
                     <p class="step-note hidden" id="install-app-done">App is already installed!</p>
                 </div>
 

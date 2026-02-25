@@ -105,8 +105,8 @@ body {
     width: 100%;
     max-width: 420px;
     background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 2rem;
     position: relative;
@@ -209,8 +209,8 @@ body {
     padding: 1.5rem 1rem 1rem;
     text-align: center;
     box-shadow: var(--shadow);
-    backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
 }
 
 .app-header h1 {
@@ -390,6 +390,7 @@ body {
     cursor: pointer;
     transition: all 0.3s ease;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
     user-select: none;
 }
 
@@ -744,8 +745,8 @@ svg.icon use {
     left: 0;
     right: 0;
     background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
     display: flex;
     justify-content: space-around;
     padding: 0.5rem 0;
@@ -1188,6 +1189,191 @@ svg.icon use {
     transition: width 0.5s ease;
 }
 
+/* ==================== MODERN PODIUM LEADERBOARD (Session 15) ==================== */
+
+.leaderboard-container {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 1rem;
+    margin: 2rem 0 1rem 0;
+    min-height: 250px;
+    padding: 2rem 1rem;
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+    border-radius: 1rem;
+}
+
+.podium-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    max-width: 120px;
+    position: relative;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.podium-section:hover {
+    transform: translateY(-4px);
+}
+
+/* First Place (Center - Tallest) */
+.podium-section.first-place {
+    order: 2;
+    min-height: 240px;
+    background: linear-gradient(180deg, #FCD34D 0%, #FBBF24 100%);
+    border-radius: 12px 12px 0 0;
+    padding: 1.5rem 1rem;
+    box-shadow: 0 8px 24px rgba(252, 211, 77, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.podium-section.first-place .podium-position {
+    font-size: 3.5rem;
+    color: #ffffff;
+    font-weight: 900;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    margin-top: auto;
+}
+
+/* Second Place (Left) */
+.podium-section.second-place {
+    order: 1;
+    min-height: 200px;
+    background: linear-gradient(180deg, #E5E7EB 0%, #D1D5DB 100%);
+    border-radius: 12px 12px 0 0;
+    padding: 1.5rem 1rem;
+    box-shadow: 0 6px 20px rgba(209, 213, 219, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.podium-section.second-place .podium-position {
+    font-size: 2.5rem;
+    color: #6B7280;
+    font-weight: 900;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    margin-top: auto;
+}
+
+/* Third Place (Right) */
+.podium-section.third-place {
+    order: 3;
+    min-height: 160px;
+    background: linear-gradient(180deg, #FED7AA 0%, #FDBA74 100%);
+    border-radius: 12px 12px 0 0;
+    padding: 1.5rem 1rem;
+    box-shadow: 0 4px 16px rgba(253, 186, 116, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.podium-section.third-place .podium-position {
+    font-size: 2rem;
+    color: #92400e;
+    font-weight: 900;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    margin-top: auto;
+}
+
+.podium-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.05) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 700;
+    color: inherit;
+    border: 3px solid rgba(255, 255, 255, 0.5);
+    margin-bottom: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.podium-info {
+    text-align: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.podium-name {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+    color: inherit;
+    word-wrap: break-word;
+    max-width: 100px;
+}
+
+.podium-score {
+    font-size: 0.95rem;
+    font-weight: 600;
+    opacity: 0.9;
+    color: inherit;
+}
+
+.podium-position {
+    display: block;
+    margin-top: 0.5rem;
+}
+
+/* Rest of Leaderboard */
+.leaderboard-rest {
+    margin-top: 2rem;
+}
+
+.leaderboard-rest h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+}
+
+.leaderboard-row {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--background);
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+    border-left: 3px solid var(--primary-color);
+}
+
+.leaderboard-row:hover {
+    background: var(--surface-hover);
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.rank-number {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--secondary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-right: 1rem;
+    flex-shrink: 0;
+}
+
+.scout-name {
+    flex: 1;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.scout-amount {
+    font-weight: 700;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+}
+
 /* Scout Roster Cards */
 .scout-card {
     padding: 1rem;
@@ -1227,8 +1413,8 @@ svg.icon use {
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
     animation: fadeIn 0.3s ease;
 }
 
@@ -1624,8 +1810,8 @@ svg.icon use {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
 }
 
 .apple-dialog-content {
@@ -1799,4 +1985,208 @@ svg.icon use {
     .scout-detail-stats {
         grid-template-columns: 1fr;
     }
+}
+
+/* ==================== UTILITY CLASSES FOR INLINE STYLES ==================== */
+
+/* Toggle Switch Wrapper */
+.toggle-switch-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.toggle-status {
+    margin-left: 0.5rem;
+}
+
+/* Info Box Styles */
+.info-box-blue {
+    background: #f0f8ff;
+    border-left: 4px solid #0066cc;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.info-box-red {
+    background: #ffe8e8;
+    border-left: 4px solid #ff3b30;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.info-box-light-blue {
+    background: #e8f5ff;
+    border-left: 3px solid #0099ff;
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+/* Progress Bar */
+.progress-fill {
+    height: 8px;
+    background: linear-gradient(90deg, #0071e3, #10b981);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+/* Form Input Styles */
+.form-input-readonly {
+    background: #fff;
+    font-weight: 600;
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.form-input-disabled {
+    background: #e8e8e8;
+}
+
+.form-input-highlighted {
+    background: #f0f8ff;
+    font-weight: 500;
+    border-left: 4px solid #0066cc;
+}
+
+.form-select-styled {
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+/* Grid Layouts */
+.grid-2-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.grid-2-col-end {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: end;
+}
+
+.grid-3-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    align-items: center;
+}
+
+.grid-2-col-flex {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+}
+
+.grid-flex-items {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: end;
+}
+
+/* Form Group Helpers */
+.form-group-end {
+    align-self: end;
+}
+
+.form-label-styled {
+    display: block;
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.25rem;
+    font-weight: 500;
+}
+
+.form-input-styled {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #999;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form-input-sm {
+    padding: 0.5rem;
+    border: 1px solid #999;
+    border-radius: 4px;
+}
+
+/* Display Text Large */
+.text-display-lg {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0099ff;
+}
+
+/* Warning/Info Text */
+.text-info-small {
+    color: #666;
+    font-size: 0.95rem;
+    margin-top: 0.5rem;
+}
+
+.text-warning-small {
+    color: #666;
+    margin: 0.5rem 0;
+}
+
+/* Button Styles */
+.btn-small {
+    padding: 0.5rem 1rem;
+    height: fit-content;
+}
+
+.btn-small-alt {
+    padding: 0.5rem 1.5rem;
+    height: fit-content;
+}
+
+/* SVG Icon in Header */
+.svg-hidden {
+    display: none;
+}
+
+/* Video Element Styling */
+.video-element {
+    width: 100%;
+    max-width: 400px;
+}
+/* Additional Grid and Form Classes */
+.grid-2-col-flex {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: end;
+}
+
+.form-select-styled {
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.text-muted {
+    color: #666;
+    margin: 0.5rem 0;
+}
+
+/* Width and spacing utilities */
+.max-width-600 {
+    max-width: 600px;
+}
+
+.margin-bottom-1rem {
+    margin-bottom: 1rem;
+}
+
+.align-self-end {
+    align-self: end;
 }
