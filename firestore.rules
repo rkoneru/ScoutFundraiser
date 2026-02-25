@@ -38,9 +38,9 @@ service cloud.firestore {
 
     // SECURITY FIX: Normalize role comparison to prevent case variations bypassing checks
     function normalizeRole(role) {
-      let normalized = role.lower();
-      return normalized == 'unit_admin' || normalized == 'unit admin' ? 'admin'
-        : normalized == 'admin' ? 'admin'
+      let normalized = role.lower().trim();
+      return (normalized == 'unit_admin' || normalized == 'unit admin' || normalized == 'admin') ? 'admin'
+        : (normalized == 'unit_leader' || normalized == 'unit leader' || normalized == 'leader') ? 'leader'
         : normalized;
     }
 
@@ -73,17 +73,66 @@ service cloud.firestore {
             && userAccount(request.auth.uid).data.unitId == userAccount(userId).data.unitId));
     }
 
+    function isKnownUnit(unitId) {
+      return unitId is string
+        && unitId.size() > 0
+        && exists(/databases/$(database)/documents/unitsPublic/$(unitId));
+    }
+
+    function isValidNormalizedRole(role) {
+      let r = normalizeRole(role);
+      return r == 'admin' || r == 'leader' || r == 'scout' || r == 'parent';
+    }
+
+    function isUnitCreator(unitId) {
+      return unitId is string
+        && exists(/databases/$(database)/documents/units/$(unitId))
+        && get(/databases/$(database)/documents/units/$(unitId)).data.createdBy == request.auth.uid;
+    }
+
+    // Legacy compatibility: allow creating memberships that match an existing immutable users/{uid} role/unit.
+    function matchesTrustedUserDoc(userId, unitId, role) {
+      return userAccountExists(userId)
+        && userAccount(userId).data.unitId == unitId
+        && normalizeRole(userAccount(userId).data.role) == normalizeRole(role);
+    }
+
     // Public unit lookup for pre-auth signup validation (stores minimal safe fields only).
+    // Safe to be permissive: only public info, reads are open to all, deletes are blocked
     match /unitsPublic/{unitId} {
-      allow read: if true;
-      allow create: if isSignedIn()
-        && request.resource.data.unitId == unitId
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if false;
+      allow get: if true;
+      allow list: if false;
+      // Allow any signed-in user to create (for recovery scenarios)
+      allow create: if isSignedIn() && request.resource.data.unitId == unitId;
+      // Allow original creator to update
+      allow update: if isSignedIn()
+        && request.auth.uid == resource.data.createdBy;
+      allow delete: if false;
     }
 
     match /users/{userId} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && request.auth.uid == userId;
+
+      // Users can create their own account doc at signup.
+      // Critical: role + unitId become immutable client-side to prevent privilege escalation.
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && isKnownUnit(request.resource.data.unitId)
+        && isValidNormalizedRole(request.resource.data.role)
+        && (
+          // Only the unit creator may self-assign privileged roles.
+          (normalizeRole(request.resource.data.role) == 'admin' || normalizeRole(request.resource.data.role) == 'leader')
+            ? isUnitCreator(request.resource.data.unitId)
+            : true
+        );
+
+      // Updates allowed, but role/unitId must not change.
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.unitId == resource.data.unitId
+        && normalizeRole(request.resource.data.role) == normalizeRole(resource.data.role);
+
+      allow delete: if false;
 
       match /sales/{saleId} {
         allow read: if isSignedIn() && (request.auth.uid == userId || isSameUnitAsUser(userId));
@@ -103,7 +152,32 @@ service cloud.firestore {
         || (membershipExists(request.auth.uid)
             && resource.data.unitId == membership(request.auth.uid).data.unitId)
       );
-      allow create, update, delete: if isSignedIn() && request.auth.uid == userId;
+      // Membership creation is allowed for the signed-in user, but privileged roles are restricted.
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.userId == userId
+        && isKnownUnit(request.resource.data.unitId)
+        && isValidNormalizedRole(request.resource.data.role)
+        && (
+          // Only unit creator can create leader/admin memberships.
+          (normalizeRole(request.resource.data.role) == 'admin' || normalizeRole(request.resource.data.role) == 'leader')
+            ? (isUnitCreator(request.resource.data.unitId) || matchesTrustedUserDoc(userId, request.resource.data.unitId, request.resource.data.role))
+            : true
+        );
+
+      // Users may not change their own role/unit; unit admins may update roles within the unit.
+      allow update: if isSignedIn()
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.unitId == resource.data.unitId
+        && isValidNormalizedRole(request.resource.data.role)
+        && (
+          // Self-update: role must not change
+          (request.auth.uid == userId && normalizeRole(request.resource.data.role) == normalizeRole(resource.data.role))
+          // Admin update: can change role but not unitId/userId
+          || (isUnitAdmin(resource.data.unitId))
+        );
+
+      allow delete: if false;
     }
 
     match /profiles/{userId} {
@@ -112,7 +186,10 @@ service cloud.firestore {
 
     match /units/{unitId} {
       // Unit doc contains private configuration; only unit members can read.
-      allow read: if isMemberOfUnit(unitId);
+      // EXCEPTION: Allow unit creator to read for recovery purposes
+      allow read: if isMemberOfUnit(unitId)
+        || (isSignedIn() && exists(/databases/$(database)/documents/units/$(unitId))
+            && get(/databases/$(database)/documents/units/$(unitId)).data.createdBy == request.auth.uid);
       // Allow signed-in user to create a unit they own.
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isUnitAdmin(unitId);
@@ -125,7 +202,9 @@ service cloud.firestore {
 
       match /products/{productId} {
         allow read: if isMemberOfUnit(unitId);
-        allow create, update, delete: if isUnitLeaderOrAdmin(unitId);
+        // Allow creation by unit leaders/admins OR the unit creator (for initial setup)
+        allow create: if isUnitLeaderOrAdmin(unitId) || isUnitCreator(unitId);
+        allow update, delete: if isUnitLeaderOrAdmin(unitId);
       }
 
       match /orders/{orderId} {

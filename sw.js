@@ -1,32 +1,30 @@
 // Service Worker for Scout Fundraiser PWA
-const CACHE_NAME = 'scoutfundraiser-v2';
-const QR_CODE_CDN = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+const CACHE_NAME = 'scoutfundraiser-v3';
 const urlsToCache = [
   './',
   './index.html',
   './styles.css',
   './app.js',
-  './jsqr.min.js',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './manifest.json'
 ];
 
-// Install event - cache files and activate immediately
+// Install event - cache files
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache)
-          .then(() => cache.add(new Request(QR_CODE_CDN, { mode: 'no-cors' })).catch(() => undefined));
-      })
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(urlsToCache).catch(err => {
+        console.log('Cache addAll error:', err);
+        // Continue anyway - some files may not exist yet
+        return Promise.resolve();
+      });
+    })
   );
   self.skipWaiting();
 });
 
-// Fetch event - network-first strategy
+// Fetch event - network first, fallback to cache
 self.addEventListener('fetch', event => {
+  // Only handle GET requests
   if (event.request.method !== 'GET') {
     return;
   }
@@ -34,21 +32,25 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        const isQrCdn = event.request.url === QR_CODE_CDN;
-        const canCache = (response.ok && response.type === 'basic') || (isQrCdn && response.type === 'opaque');
-        if (canCache) {
+        // Cache successful responses
+        if (response && response.status === 200 && response.type === 'basic') {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
+            cache.put(event.request, responseClone).catch(() => {
+              // Ignore cache errors
+            });
           });
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        // If network fails, try cache
+        return caches.match(event.request);
+      })
   );
 });
 
-// Activate event - clean up old caches and take control
+// Activate event - clean up old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
