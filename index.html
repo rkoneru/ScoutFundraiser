@@ -19,7 +19,6 @@
     <link rel="apple-touch-icon" href="icon.png">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>💰</text></svg>">
     <title>Troop 242 Scout Fundraiser</title>
-    <!-- <title>Troop 242 Scout Fundraiser</title> -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -145,8 +144,8 @@
         </div>
         <div class="landing-login card">
             <div class="auth-tabs">
-                <button type="button" class="auth-tab-btn active" data-tab="login">Sign In</button>
-                <button type="button" class="auth-tab-btn" data-tab="signup">Sign Up</button>
+                <button type="button" class="auth-tab-btn active" data-tab="login" aria-label="Switch to Sign In tab">Sign In</button>
+                <button type="button" class="auth-tab-btn" data-tab="signup" aria-label="Switch to Sign Up tab">Sign Up</button>
             </div>
 
             <!-- Login Form -->
@@ -160,8 +159,8 @@
                     <label for="login-password">Password</label>
                     <input type="password" id="login-password" placeholder="Password" required>
                 </div>
-                <button type="submit" class="btn btn-primary" id="login-btn">Sign In</button>
-                <button type="button" class="btn btn-secondary" id="forgot-password-btn">Forgot Password?</button>
+                <button type="submit" class="btn btn-primary" id="login-btn" aria-label="Submit sign in form">Sign In</button>
+                <button type="button" class="btn btn-secondary" id="forgot-password-btn" aria-label="Reset forgotten password">Forgot Password?</button>
                 <p class="login-error" id="login-error" aria-live="polite"></p>
             </form>
 
@@ -209,7 +208,7 @@
                     <label for="signup-confirm">Confirm Password</label>
                     <input type="password" id="signup-confirm" placeholder="Confirm password" required>
                 </div>
-                <button type="submit" class="btn btn-primary" id="signup-btn">Create Account</button>
+                <button type="submit" class="btn btn-primary" id="signup-btn" aria-label="Submit sign up form">Create Account</button>
                 <p class="signup-error" id="signup-error" aria-live="polite"></p>
             </form>
         </div>
@@ -224,31 +223,31 @@
 
         <!-- Navigation -->
         <nav class="bottom-nav">
-            <button class="nav-btn active" data-page="quicklog">
+            <button class="nav-btn active" data-page="quicklog" aria-label="Go to Quick Log page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-zap"/></svg></span>
                 <span>Quick Log</span>
             </button>
-            <button class="nav-btn" data-page="dashboard">
+            <button class="nav-btn" data-page="dashboard" aria-label="Go to Dashboard page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-chart"/></svg></span>
                 <span>Dashboard</span>
             </button>
-            <button class=" hidden" data-page="sales">
+            <button class=" hidden" data-page="sales" aria-label="Go to Sales page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
                 <span>Sales</span>
             </button>
-            <button class="nav-btn" data-page="scouts">
+            <button class="nav-btn" data-page="scouts" aria-label="Go to Roster page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
                 <span>Roster</span>
             </button>
-            <button class="nav-btn" data-page="communication">
+            <button class="nav-btn" data-page="communication" aria-label="Go to Communication page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-qr"/></svg></span>
                 <span>Share</span>
             </button>
-            <button class="nav-btn" data-page="operations">
+            <button class="nav-btn" data-page="operations" aria-label="Go to Operations page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
                 <span>Ops</span>
             </button>
-            <button class="nav-btn" data-page="settings">
+            <button class="nav-btn" data-page="settings" aria-label="Go to Settings page">
                 <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-settings"/></svg></span>
                 <span>Settings</span>
             </button>
@@ -270,11 +269,11 @@
                         <h3>What are you logging?</h3>
                     </div>
                     <div class="type-toggle">
-                        <button type="button" class="type-toggle-btn active" data-type="card" id="type-btn-card">
+                        <button type="button" class="type-toggle-btn active" data-type="card" id="type-btn-card" aria-label="Select Card sale type">
                             <span class="type-toggle-icon"><svg class="icon"><use href="#icon-card"/></svg></span>
                             <span class="type-toggle-label" id="type-btn-card-label">Scout Card</span>
                         </button>
-                        <button type="button" class="type-toggle-btn" data-type="donation" id="type-btn-donation">
+                        <button type="button" class="type-toggle-btn" data-type="donation" id="type-btn-donation" aria-label="Select Donation sale type">
                             <span class="type-toggle-icon"><svg class="icon"><use href="#icon-heart"/></svg></span>
                             <span class="type-toggle-label">Donation</span>
                         </button>
@@ -337,7 +336,7 @@
                         </div>
                       
                     </div>
-                    <button type="button" class="btn btn-accent btn-qr-pay hidden" id="quick-show-qr"><svg class="icon icon-btn"><use href="#icon-qr"/></svg> Show Payment QR</button>
+                    <button type="button" class="btn btn-accent btn-qr-pay hidden" id="quick-show-qr" aria-label="Display payment QR code"><svg class="icon icon-btn"><use href="#icon-qr"/></svg> Show Payment QR</button>
                 </div>
 
                 <div class="card step-card" id="step-3">
@@ -346,7 +345,7 @@
                         <h3>Submit</h3>
                     </div>
                     <div id="quick-summary" class="quick-summary">Scan a QR code to get started.</div>
-                    <button type="button" class="btn btn-primary" id="quick-submit">Record Sale</button>
+                    <button type="button" class="btn btn-primary" id="quick-submit" aria-label="Submit sale record">Record Sale</button>
                 </div>
 
                 <!-- Hidden QR elements (referenced by JS) -->
@@ -472,7 +471,7 @@
                             <label for="sale-notes">Notes (optional)</label>
                             <textarea id="sale-notes" placeholder="Any details..." rows="2"></textarea>
                         </div>
-                        <button type="submit" class="btn btn-primary"><svg class="icon icon-btn"><use href="#icon-check"/></svg> Record Sale</button>
+                        <button type="submit" class="btn btn-primary" aria-label="Submit sales form"><svg class="icon icon-btn"><use href="#icon-check"/></svg> Record Sale</button>
                     </form>
                 </div>
 
@@ -521,7 +520,7 @@
                                 <input type="number" id="scout-goal" min="0" step="1" value="2000" required>
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-primary"><svg class="icon icon-btn"><use href="#icon-plus"/></svg> Add Scout</button>
+                        <button type="submit" class="btn btn-primary" aria-label="Submit form to add scout"><svg class="icon icon-btn"><use href="#icon-plus"/></svg> Add Scout</button>
                     </form>
                 </div>
 
@@ -591,8 +590,8 @@
                         <p class="qr-note" id="qr-note"></p>
                     </div>
                     <div class="qr-actions">
-                        <button type="button" class="btn btn-primary" id="qr-record-sale"><svg class="icon icon-btn"><use href="#icon-check"/></svg> Record This Sale</button>
-                        <button type="button" class="btn btn-secondary" id="qr-new"><svg class="icon icon-btn"><use href="#icon-refresh"/></svg> New QR Code</button>
+                        <button type="button" class="btn btn-primary" id="qr-record-sale" aria-label="Record sale from QR code"><svg class="icon icon-btn"><use href="#icon-check"/></svg> Record This Sale</button>
+                        <button type="button" class="btn btn-secondary" id="qr-new" aria-label="Generate new QR code"><svg class="icon icon-btn"><use href="#icon-refresh"/></svg> New QR Code</button>
                     </div>
                 </div>
             </section>
@@ -621,11 +620,11 @@
                         <textarea id="comm-message" rows="5"></textarea>
                     </div>
                     <div class="action-buttons">
-                        <button type="button" class="btn btn-secondary" id="comm-copy-link">Copy Link</button>
-                        <button type="button" class="btn btn-secondary" id="comm-copy-message">Copy Message</button>
-                        <button type="button" class="btn btn-primary" id="comm-email">Email</button>
-                        <button type="button" class="btn btn-primary" id="comm-sms">Text Message</button>
-                        <button type="button" class="btn btn-primary" id="comm-share">Share</button>
+                        <button type="button" class="btn btn-secondary" id="comm-copy-link" aria-label="Copy fundraiser link to clipboard">Copy Link</button>
+                        <button type="button" class="btn btn-secondary" id="comm-copy-message" aria-label="Copy fundraiser message to clipboard">Copy Message</button>
+                        <button type="button" class="btn btn-primary" id="comm-email" aria-label="Send fundraiser via email">Email</button>
+                        <button type="button" class="btn btn-primary" id="comm-sms" aria-label="Send fundraiser via text message">Text Message</button>
+                        <button type="button" class="btn btn-primary" id="comm-share" aria-label="Share fundraiser">Share</button>
                     </div>
                 </div>
             </section>
@@ -654,7 +653,7 @@
                             <input type="number" id="ops-product-stock" readonly class="form-input-disabled">
                         </div>
                         <div class="form-group hidden align-self-end">
-                            <button type="button" class="btn btn-danger btn-small" id="ops-delete-product-sales" title="Delete all sales of this product">Delete Product Sales</button>
+                            <button type="button" class="btn btn-danger btn-small" id="ops-delete-product-sales" title="Delete all sales of this product" aria-label="Delete all sales for this product">Delete Product Sales</button>
                         </div>
                     </div>
                     <p class="text-info-small">✓ Scouts will see this product in Quick Log · ✓ Inventory auto-deducts on sale</p>
@@ -681,7 +680,7 @@
                                 <label class="stock-adjustment-label">Adjust Stock (+ to add, - to remove)</label>
                                 <input type="number" id="stock-adjustment-input" placeholder="Enter amount" class="stock-adjustment-input" title="Stock adjustment amount">
                             </div>
-                            <button type="button" class="btn btn-secondary btn-small stock-adjust-btn" id="stock-adjust-btn">Adjust</button> 
+                            <button type="button" class="btn btn-secondary btn-small stock-adjust-btn" id="stock-adjust-btn" aria-label="Adjust product stock">Adjust</button> 
                         </div>
                     </div>
                     <div id="product-list"></div>
@@ -718,7 +717,7 @@
                                 <label class="form-label-styled">Quick Add Units</label>
                                 <div class="grid-2-col-flex">
                                     <input type="number" id="order-quick-add" placeholder="+5" min="1" class="form-input-sm">
-                                    <button type="button" class="btn btn-secondary btn-small" id="order-quick-add-btn">Add</button>
+                                    <button type="button" class="btn btn-secondary btn-small" id="order-quick-add-btn" aria-label="Add order line">Add</button>
                                 </div>
                             </div>
                         </div>
@@ -740,8 +739,8 @@
                     </div>
 
                     <div class="action-buttons">
-                        <button type="button" class="btn btn-secondary" id="order-add-line">Add Line</button>
-                        <button type="button" class="btn btn-primary" id="order-submit">Submit Order</button>
+                        <button type="button" class="btn btn-secondary" id="order-add-line" aria-label="Add new order line item">Add Line</button>
+                        <button type="button" class="btn btn-primary" id="order-submit" aria-label="Submit order">Submit Order</button>
                     </div>
                     <div id="order-lines"></div>
                     <div id="orders-list"></div>
@@ -752,7 +751,7 @@
                     <div id="master-order"></div>
                     <div id="recon-summary"></div>
                     <div class="action-buttons">
-                        <button type="button" class="btn btn-primary" id="export-closeout-csv">Export Closeout CSV</button>
+                        <button type="button" class="btn btn-primary" id="export-closeout-csv" aria-label="Export closeout data as CSV">Export Closeout CSV</button>
                         <!-- <button type="button" class="btn btn-danger" id="delete-all-sales" style="display:none;" title="Permanently delete all sales (Admins only)">Delete All Sales</button> -->
                     </div> 
                 </div>
@@ -760,7 +759,7 @@
                     <h3>🔴 Data Reset & Archive (Admin Only)</h3>
                     <p class="text-muted">⚠️ Complete campaign reset. Saves all current data to CSV backup before permanent deletion.</p>
                     <div class="action-buttons">
-                        <button type="button" class="btn btn-danger hidden" id="reset-campaign-data" title="Delete ALL data (sales, orders, inventory) and start fresh">Reset Campaign Data</button>
+                        <button type="button" class="btn btn-danger hidden" id="reset-campaign-data" title="Delete ALL data (sales, orders, inventory) and start fresh" aria-label="Reset all campaign data">Reset Campaign Data</button>
                     </div>
                 </div>
             </section>
@@ -879,7 +878,7 @@
                                 <input type="file" id="handle-qr-zelle" class="handle-qr-input" accept="image/*" aria-label="Upload Zelle QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-zelle" class="handle-qr-preview hidden" alt="Zelle QR preview">
-                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-zelle">Remove QR</button>
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-zelle" aria-label="Remove Zelle payment QR code">Remove QR</button>
                             </div>
                         </div>
                         <div class="handle-lock">
@@ -898,7 +897,7 @@
                                 <input type="file" id="handle-qr-venmo" class="handle-qr-input" accept="image/*" aria-label="Upload Venmo QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-venmo" class="handle-qr-preview hidden" alt="Venmo QR preview">
-                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-venmo">Remove QR</button>
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-venmo" aria-label="Remove Venmo payment QR code">Remove QR</button>
                             </div>
                         </div>
                         <div class="handle-lock">
@@ -917,7 +916,7 @@
                                 <input type="file" id="handle-qr-cashapp" class="handle-qr-input" accept="image/*" aria-label="Upload CashApp QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-cashapp" class="handle-qr-preview hidden" alt="CashApp QR preview">
-                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-cashapp">Remove QR</button>
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-cashapp" aria-label="Remove Cash App payment QR code">Remove QR</button>
                             </div>
                         </div>
                         <div class="handle-lock">
@@ -936,7 +935,7 @@
                                 <input type="file" id="handle-qr-applepay" class="handle-qr-input" accept="image/*" aria-label="Upload Apple Pay QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-applepay" class="handle-qr-preview hidden" alt="Apple Pay QR preview">
-                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-applepay">Remove QR</button>
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-applepay" aria-label="Remove Apple Pay QR code">Remove QR</button>
                             </div>
                         </div>
                         <div class="handle-lock">
@@ -951,7 +950,7 @@
 
                 <div class="card">
                     <h3>Credit Card Payment Handler</h3>
-                    <p class="step-note">Set up your credit card payment link/details. This can be a Square, Stripe, or PayPal link.</p>
+                    <p class="step-note">Set up Your Troops' credit card payment link/details. </p>
                     <div class="handle-row">
                         <div class="form-group handle-input-group">
                             <label for="handle-creditcard">Credit Card Link/Details</label>
@@ -960,7 +959,7 @@
                                 <input type="file" id="handle-qr-creditcard" class="handle-qr-input" accept="image/*" aria-label="Upload Credit Card payment QR code image">
                                 <span class="step-note">Recommended: under 300 KB</span>
                                 <img id="handle-qr-preview-creditcard" class="handle-qr-preview hidden" alt="Credit Card QR preview">
-                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-creditcard">Remove QR</button>
+                                <button type="button" class="btn btn-secondary btn-small hidden" id="handle-qr-remove-creditcard" aria-label="Remove credit card QR code">Remove QR</button>
                             </div>
                         </div>
                         <div class="handle-lock">
@@ -976,7 +975,7 @@
                 <div class="card" id="install-app-card">
                     <h3>Install App</h3>
                     <p>Install Troop 242 Fundraiser on your device for quick access from your home screen.</p>
-                    <button type="button" class="btn btn-primary" id="install-app-btn"><svg class="icon icon-btn"><use href="#icon-download"/></svg> Install App</button>
+                    <button type="button" class="btn btn-primary" id="install-app-btn" aria-label="Install app as progressive web app"><svg class="icon icon-btn"><use href="#icon-download"/></svg> Install App</button>
                     <p class="step-note hidden" id="install-app-done">App is already installed!</p>
                 </div>
 
@@ -1024,7 +1023,7 @@
                 <p class="apple-dialog-message" id="apple-alert-message"></p>
             </div>
             <div class="apple-dialog-actions">
-                <button class="apple-btn apple-btn-primary" id="apple-alert-ok">OK</button>
+                <button class="apple-btn apple-btn-primary" id="apple-alert-ok" aria-label="Confirm alert">OK</button>
             </div>
         </div>
     </div>
@@ -1038,8 +1037,8 @@
                 <p class="apple-dialog-message" id="apple-confirm-message"></p>
             </div>
             <div class="apple-dialog-actions">
-                <button class="apple-btn apple-btn-secondary" id="apple-confirm-cancel">Cancel</button>
-                <button class="apple-btn apple-btn-danger" id="apple-confirm-ok">Delete</button>
+                <button class="apple-btn apple-btn-secondary" id="apple-confirm-cancel" aria-label="Cancel action">Cancel</button>
+                <button class="apple-btn apple-btn-danger" id="apple-confirm-ok" aria-label="Confirm delete action">Delete</button>
             </div>
         </div>
     </div>

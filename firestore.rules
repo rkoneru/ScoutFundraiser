@@ -1,6 +1,28 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ========== SECURITY: COLLECTION-LEVEL ACCESS CONTROL ==========
+    // Deny-by-default at root level - all access must be explicitly allowed
+    // This ensures unauthorized collections cannot be accessed even if a user bypasses path-specific rules
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Collection-level restrictions implemented:
+    // 1. Root deny-all (lines 6-8) - prevents access to any unlisted collections
+    // 2. unitsPublic (lines 114-123): Public read-only (minimal data), authenticated writes only
+    // 3. users (lines 125-158): Self-only reads, role/unitId immutable on updates
+    // 4. memberships (lines 160-193): Unit-member-only reads (prevents IDOR), privileged role restrictions
+    // 5. profiles (lines 195-197): Self-only reads/writes
+    // 6. units (lines 199-226): Unit-member access, immutable fields, admin-only deletes
+    // 7. units/scouts, units/products, units/orders: Nested under units, inherit unit access
+    //
+    // Key Security Features:
+    // - All roles normalized to prevent case-variation bypasses
+    // - Unit creator immutable after creation
+    // - Role/unitId cannot be changed post-creation (prevents escalation)
+    // - IDOR fix: Memberships filterable only by own unit
+
     function isSignedIn() {
       return request.auth != null;
     }
