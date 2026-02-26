@@ -59,7 +59,7 @@ function escapeHTML(str) {
 describe('escapeHTML()', () => {
     test('escapes dangerous HTML characters', () => {
         expect(escapeHTML('<script>')).not.toContain('<script>');
-        expect(escapeHTML('<img onerror="alert(1)">')).not.toContain('onerror');
+        expect(escapeHTML('<img onerror="alert(1)">')).not.toContain('<img');
     });
 
     test('preserves normal text', () => {
@@ -164,7 +164,7 @@ describe('validatePassword()', () => {
  * Utility: Calculate card quantity from sale
  */
 function getCardQtyFromSale(sale) {
-    return Number(sale.cardQty) || 0;
+    return Number(sale && sale.cardQty) || 0;
 }
 
 describe('getCardQtyFromSale()', () => {

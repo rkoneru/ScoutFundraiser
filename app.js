@@ -1505,6 +1505,188 @@ async function saveUnitPageVisibilityToFirestore(unitId, pageVisibility) {
     }, { merge: true });
 }
 
+// ==================== USER MANAGEMENT (ADMIN) ====================
+
+async function getAllUsersFromFirestore(unitId) {
+    const { getDocs, collection, query, where } = window.firebaseImports;
+    const normalizedUnitId = normalizeUnitId(unitId);
+    if (!normalizedUnitId) return [];
+
+    try {
+        // CRITICAL FIX: Query the root-level users collection directly
+        // Users collection stores name and email at signup
+        // This is the source of truth for user data
+        console.log(`[DEBUG] Querying users collection for unitId: ${normalizedUnitId}`);
+
+        const usersQuery = query(
+            collection(db, 'users'),
+            where('unitId', '==', normalizedUnitId)
+        );
+        const snapshot = await getDocs(usersQuery);
+
+        const users = [];
+
+        snapshot.forEach(userDoc => {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            // Get name and email directly from users collection
+            const name = (userData.name || '').trim();
+            const email = (userData.email || '').toLowerCase().trim();
+
+            // Display name: prefer actual name, fallback to email, then userId
+            const displayName = name || email || userId;
+
+            // Email display: prefer actual email, fallback to userId
+            const emailDisplay = email || userId;
+
+            console.log(`[DEBUG] User: id="${userId}", name="${name}", email="${email}", displayName="${displayName}", role="${userData.role}"`);
+
+            users.push({
+                id: userId,
+                email: emailDisplay,
+                displayName: displayName,
+                name: name,
+                role: userData.role || 'scout',
+                unitId: userData.unitId
+            });
+        });
+
+        console.log(`[DEBUG] Found ${users.length} users for unit ${normalizedUnitId}`);
+        return users;
+    } catch (e) {
+        console.error('Error fetching users:', e);
+        ErrorHandler.handle(e, 'Failed to fetch users from Firestore');
+        return [];
+    }
+}
+
+async function getAllMembershipsFromFirestore(unitId) {
+    const { getDocs, collection, query, where, getDoc, doc } = window.firebaseImports;
+    const normalizedUnitId = normalizeUnitId(unitId);
+    if (!normalizedUnitId) return [];
+
+    try {
+        // Query memberships by unitId
+        const membershipsQuery = query(
+            collection(db, 'memberships'),
+            where('unitId', '==', normalizedUnitId)
+        );
+        const snapshot = await getDocs(membershipsQuery);
+
+        const memberships = [];
+        const profilePromises = [];
+
+        snapshot.forEach(memberDoc => {
+            const userId = memberDoc.id;
+            const memberData = memberDoc.data();
+
+            // Get name and email from memberships collection
+            const memberName = (memberData.name || '').trim();
+            const memberEmail = (memberData.email || '').toLowerCase().trim();
+
+            // For each membership, get data from users collection (source of truth)
+            profilePromises.push(
+                getDoc(doc(db, 'users', userId)).then(userDoc => {
+                    let name = memberName;
+                    let email = memberEmail;
+
+                    // Try to get from users collection first (more reliable)
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        name = (userData.name || memberName || '').trim();
+                        email = (userData.email || memberEmail || '').toLowerCase().trim();
+                    }
+
+                    // Display name: prefer name, fallback to email, then userId
+                    const displayName = name || email || userId;
+                    const emailDisplay = email || userId;
+
+                    console.log(`[DEBUG] Member: id="${userId}", users.name="${name}", users.email="${email}"`);
+
+                    memberships.push({
+                        id: userId,
+                        email: emailDisplay,
+                        displayName: displayName,
+                        name: name,
+                        role: memberData.role || 'scout',
+                        unitId: memberData.unitId
+                    });
+                }).catch(e => {
+                    // Use membership data as fallback
+                    const name = memberName;
+                    const email = memberEmail;
+
+                    const displayName = name || email || userId;
+                    const emailDisplay = email || userId;
+
+                    memberships.push({
+                        id: userId,
+                        email: emailDisplay,
+                        displayName: displayName,
+                        name: name,
+                        role: memberData.role || 'scout',
+                        unitId: memberData.unitId
+                    });
+                })
+            );
+        });
+
+        await Promise.all(profilePromises);
+        return memberships;
+    } catch (e) {
+        console.error('Error fetching memberships:', e);
+        ErrorHandler.handle(e, 'Failed to fetch memberships from Firestore');
+        return [];
+    }
+}
+
+async function deleteUserFromFirestore(userId) {
+    const { deleteDoc, doc, getDocs, collection } = window.firebaseImports;
+    
+    try {
+        // Delete user document
+        await deleteDoc(doc(db, 'users', userId));
+        
+        // Delete user's sales subcollection
+        const salesSnapshot = await getDocs(collection(db, 'users', userId, 'sales'));
+        const deletePromises = [];
+        salesSnapshot.forEach(saleDoc => {
+            deletePromises.push(deleteDoc(saleDoc.ref));
+        });
+        
+        // Delete user's scouts subcollection
+        const scoutsSnapshot = await getDocs(collection(db, 'users', userId, 'scouts'));
+        scoutsSnapshot.forEach(scoutDoc => {
+            deletePromises.push(deleteDoc(scoutDoc.ref));
+        });
+        
+        await Promise.all(deletePromises);
+        
+        // Try to delete membership if exists
+        try {
+            await deleteDoc(doc(db, 'memberships', userId));
+        } catch (e) {
+            // Membership may not exist, that's ok
+            console.log('No membership to delete for user:', userId);
+        }
+        
+        // Try to delete profile if exists
+        try {
+            await deleteDoc(doc(db, 'profiles', userId));
+        } catch (e) {
+            // Profile may not exist, that's ok
+            console.log('No profile to delete for user:', userId);
+        }
+        
+        return true;
+    } catch (e) {
+        console.error('Error deleting user:', e);
+        ErrorHandler.handle(e, 'Failed to delete user from Firestore');
+        return false;
+    }
+}
+
 // ==================== MAIN APP CLASS ====================
 
 class ScoutFundraiserApp {
@@ -1656,14 +1838,14 @@ class ScoutFundraiserApp {
     }
 
     canAccessCommunication() {
-        return this.currentRole === 'scout';
+        return true; // All roles can access Share & Outreach page
     }
 
     isPageBaseAllowedForRole(page, role) {
         const r = normalizeRole(role);
         if (page === 'settings') return true;
         if (page === 'operations') return r === 'leader' || r === 'admin';
-        if (page === 'communication') return r === 'scout';
+        if (page === 'communication') return true; // All users can see Share & Outreach page
         return true;
     }
 
@@ -2077,6 +2259,38 @@ class ScoutFundraiserApp {
                 email: (this.currentUser.email || '').trim().toLowerCase()
             });
             this.currentProfile = await getProfileForUser(this.currentUser.uid);
+        }
+
+        // CRITICAL FIX: Ensure profile has name and email
+        // If profile is incomplete, populate from Firebase Auth or users collection
+        let needsProfileUpdate = false;
+        let profileUpdate = { ...this.currentProfile };
+
+        // Ensure profile has name
+        if (!profileUpdate.name || profileUpdate.name.trim() === '') {
+            const fallbackName = (this.currentUser.displayName || this.currentUser.email || 'Scout').trim();
+            if (fallbackName) {
+                profileUpdate.name = fallbackName;
+                needsProfileUpdate = true;
+                console.log(`[DEBUG] Updating profile name to: ${fallbackName}`);
+            }
+        }
+
+        // Ensure profile has email
+        if (!profileUpdate.email || profileUpdate.email.trim() === '') {
+            const emailValue = (this.currentUser.email || '').toLowerCase().trim();
+            if (emailValue) {
+                profileUpdate.email = emailValue;
+                needsProfileUpdate = true;
+                console.log(`[DEBUG] Updating profile email to: ${emailValue}`);
+            }
+        }
+
+        // Save updated profile if needed
+        if (needsProfileUpdate) {
+            await saveProfileForUser(this.currentUser.uid, profileUpdate);
+            this.currentProfile = await getProfileForUser(this.currentUser.uid);
+            console.log(`[DEBUG] Profile updated:`, this.currentProfile);
         }
 
         await this.promptForPersonalGoalIfNeeded();
@@ -3669,7 +3883,9 @@ class ScoutFundraiserApp {
         // These can be enumerated/scraped from QR codes. Use anonymous share instead.
         const scoutToken = this.generateScoutShareToken();
         const donationUrl = `${base}?token=${encodeURIComponent(scoutToken)}`;
-        const message = `Hi! This is ${scoutName}. I'm fundraising with my scout unit and working toward my goal of ${formatMoney(goal)}. I've reached ${progressPct.toFixed(1)}% so far (${formatMoney(raised)}). You can support me here: ${donationUrl}`;
+
+        // Enhanced message with friendly fundraising request
+        const message = `Hi! 👋 This is ${scoutName}. I'm fundraising with my scout unit and would love your support! I'm working toward my goal of ${formatMoney(goal)} and have raised ${formatMoney(raised)} so far (${progressPct.toFixed(1)}% complete). Every donation helps! You can support me here: ${donationUrl}. Thank you! 🙏`;
 
         return { donationUrl, message, scoutName, goal, raised, progressPct };
     }
@@ -3700,6 +3916,40 @@ class ScoutFundraiserApp {
             }
         }
 
+        // Cleanup Unit QR listeners
+        if (this.unitQrListeners) {
+            const unitQrCopyLink = document.getElementById('unit-qr-copy-link');
+            const unitQrDownload = document.getElementById('unit-qr-download');
+            const unitQrShare = document.getElementById('unit-qr-share');
+
+            if (unitQrCopyLink && this.unitQrListeners.copyLink) {
+                unitQrCopyLink.removeEventListener('click', this.unitQrListeners.copyLink);
+            }
+            if (unitQrDownload && this.unitQrListeners.download) {
+                unitQrDownload.removeEventListener('click', this.unitQrListeners.download);
+            }
+            if (unitQrShare && this.unitQrListeners.share) {
+                unitQrShare.removeEventListener('click', this.unitQrListeners.share);
+            }
+        }
+
+        // Cleanup Payment QR listeners
+        if (this.paymentQrListeners) {
+            const paymentCopyBtn = document.getElementById('payment-qr-copy');
+            const paymentDownloadBtn = document.getElementById('payment-qr-download');
+            const paymentShareBtn = document.getElementById('payment-qr-share');
+
+            if (paymentCopyBtn && this.paymentQrListeners.copy) {
+                paymentCopyBtn.removeEventListener('click', this.paymentQrListeners.copy);
+            }
+            if (paymentDownloadBtn && this.paymentQrListeners.download) {
+                paymentDownloadBtn.removeEventListener('click', this.paymentQrListeners.download);
+            }
+            if (paymentShareBtn && this.paymentQrListeners.share) {
+                paymentShareBtn.removeEventListener('click', this.paymentQrListeners.share);
+            }
+        }
+
         // Reset listeners object
         this.communicationListeners = {
             copyLink: null,
@@ -3708,11 +3958,402 @@ class ScoutFundraiserApp {
             sms: null,
             share: null
         };
+        this.unitQrListeners = {
+            copyLink: null,
+            download: null,
+            share: null
+        };
+        this.paymentQrListeners = {
+            copy: null,
+            download: null,
+            share: null
+        };
+    }
+
+    setupUnitQRCode() {
+        // Unit QR Code is only visible to Leaders and Admins
+        const unitQrSection = document.getElementById('unit-qr-section');
+        const unitQrcodeContainer = document.getElementById('unit-qrcode');
+        const unitQrDisplayId = document.getElementById('unit-qr-display-id');
+        const unitQrCopyLink = document.getElementById('unit-qr-copy-link');
+        const unitQrDownload = document.getElementById('unit-qr-download');
+        const unitQrShare = document.getElementById('unit-qr-share');
+
+        // Hide for scouts and parents
+        const isAdminOrLeader = this.currentRole === 'admin' || this.currentRole === 'leader';
+        if (unitQrSection) {
+            unitQrSection.classList.toggle('hidden', !isAdminOrLeader);
+        }
+
+        if (!isAdminOrLeader) {
+            console.log('[UNIT QR] Not showing unit QR code - user is not admin/leader');
+            return;
+        }
+
+        if (!unitQrcodeContainer || !unitQrDisplayId) {
+            console.warn('[UNIT QR] Unit QR code elements not found');
+            return;
+        }
+
+        console.log('[UNIT QR] Setting up unit QR code for:', this.currentUnitId);
+
+        // Generate unit signup URL
+        const signupPageUrl = `${window.location.origin}${window.location.pathname.replace(/\/[^\/]*$/, '')}/`;
+        const unitSignupUrl = `${signupPageUrl}?unit=${encodeURIComponent(this.currentUnitId)}`;
+
+        // Generate QR code
+        try {
+            if (typeof QRCode === 'undefined') {
+                console.error('[UNIT QR] QRCode library not loaded');
+                unitQrcodeContainer.innerHTML = '<p style="color: red;">QR Code library not loaded</p>';
+                return;
+            }
+
+            // Clear previous QR code
+            unitQrcodeContainer.innerHTML = '';
+
+            // Generate new QR code
+            new QRCode(unitQrcodeContainer, {
+                text: unitSignupUrl,
+                width: 280,
+                height: 280,
+                colorDark: '#0071e3',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            // Display Unit ID
+            unitQrDisplayId.textContent = this.currentUnitId;
+
+            console.log('[UNIT QR] QR code generated for unit:', this.currentUnitId);
+        } catch (error) {
+            console.error('[UNIT QR] Error generating QR code:', error);
+            unitQrcodeContainer.innerHTML = '<p style="color: red;">Failed to generate QR code</p>';
+        }
+
+        // Setup button handlers
+        if (unitQrCopyLink) {
+            const copyLinkHandler = async () => {
+                await navigator.clipboard.writeText(unitSignupUrl);
+                await appleAlert('Copied', 'Unit signup link copied to clipboard.');
+            };
+            unitQrCopyLink.addEventListener('click', copyLinkHandler);
+            if (!this.unitQrListeners) this.unitQrListeners = {};
+            this.unitQrListeners.copyLink = copyLinkHandler;
+        }
+
+        if (unitQrDownload) {
+            const downloadHandler = async () => {
+                try {
+                    const canvas = unitQrcodeContainer.querySelector('canvas');
+                    if (!canvas) {
+                        await appleAlert('Error', 'QR code not ready. Please try again.');
+                        return;
+                    }
+                    const link = document.createElement('a');
+                    link.href = canvas.toDataURL('image/png');
+                    link.download = `unit-signup-qr-${this.currentUnitId}.png`;
+                    link.click();
+                    await appleAlert('Downloaded', 'QR code saved to your device.');
+                } catch (error) {
+                    console.error('[UNIT QR] Download error:', error);
+                    await appleAlert('Error', 'Failed to download QR code.');
+                }
+            };
+            unitQrDownload.addEventListener('click', downloadHandler);
+            if (!this.unitQrListeners) this.unitQrListeners = {};
+            this.unitQrListeners.download = downloadHandler;
+        }
+
+        if (unitQrShare) {
+            const shareHandler = async () => {
+                try {
+                    if (navigator.share) {
+                        await navigator.share({
+                            title: `Join ${this.currentUnitId} Scout Fundraiser`,
+                            text: `Scan this QR code or visit this link to join our unit fundraiser`,
+                            url: unitSignupUrl
+                        });
+                    } else {
+                        await navigator.clipboard.writeText(unitSignupUrl);
+                        await appleAlert('Copied', 'Link copied to clipboard for sharing.');
+                    }
+                } catch (error) {
+                    console.error('[UNIT QR] Share error:', error);
+                }
+            };
+            unitQrShare.addEventListener('click', shareHandler);
+            if (!this.unitQrListeners) this.unitQrListeners = {};
+            this.unitQrListeners.share = shareHandler;
+        }
+    }
+
+    setupPaymentQRCode() {
+        console.log('[PAYMENT QR] Setting up payment QR code selector');
+
+        const methodSelect = document.getElementById('payment-method-select');
+        const handleGroup = document.getElementById('payment-handle-group');
+        const handleInput = document.getElementById('payment-handle-input');
+        const handleLabel = document.getElementById('payment-handle-label');
+        const handleHint = document.getElementById('payment-handle-hint');
+        const qrContainer = document.getElementById('payment-qr-container');
+        const qrCodeDiv = document.getElementById('payment-qr-code');
+        const methodDisplay = document.getElementById('payment-method-display');
+        const handleDisplay = document.getElementById('payment-handle-display');
+        const copyBtn = document.getElementById('payment-qr-copy');
+        const downloadBtn = document.getElementById('payment-qr-download');
+        const shareBtn = document.getElementById('payment-qr-share');
+
+        if (!methodSelect) {
+            console.warn('[PAYMENT QR] Payment method select not found');
+            return;
+        }
+
+        const paymentMethods = {
+            venmo: {
+                name: '💚 Venmo',
+                hint: 'Example: @username or username',
+                urlPattern: 'venmo://paycharge?txn=pay&recipients={handle}&amount={amount}'
+            },
+            cashapp: {
+                name: '💵 Cash App',
+                hint: 'Example: $username or phone number',
+                urlPattern: 'https://cash.app/${handle}'
+            },
+            zelle: {
+                name: '🏦 Zelle',
+                hint: 'Example: email or phone number',
+                urlPattern: 'https://www.zellepay.com'
+            }
+        };
+
+        // Get saved payment handles
+        const handles = (this.settings && this.settings.paymentHandles) || {};
+
+        // Handle payment method selection
+        methodSelect.addEventListener('change', async (e) => {
+            const method = e.target.value;
+            console.log('[PAYMENT QR] Payment method selected:', method);
+
+            if (!method) {
+                handleGroup.classList.add('hidden');
+                qrContainer.classList.add('hidden');
+                return;
+            }
+
+            // Show handle input
+            handleGroup.classList.remove('hidden');
+            const methodInfo = paymentMethods[method];
+            if (methodInfo) {
+                handleLabel.textContent = `${methodInfo.name} Handle:`;
+                handleHint.textContent = methodInfo.hint;
+            }
+
+            // Auto-populate with saved handle (like Settings page)
+            handleInput.value = handles[method] || '';
+
+            // Focus on input
+            handleInput.focus();
+            qrContainer.classList.add('hidden');
+
+            // Trigger QR generation if saved handle exists
+            if (handles[method]) {
+                setTimeout(() => {
+                    const event = new Event('input', { bubbles: true });
+                    handleInput.dispatchEvent(event);
+                }, 100);
+            }
+        });
+
+        // Generate QR code when handle is entered
+        const generatePaymentQR = async () => {
+            const method = methodSelect.value;
+            const handle = handleInput.value.trim();
+
+            if (!method || !handle) {
+                qrContainer.classList.add('hidden');
+                return;
+            }
+
+            const methodInfo = paymentMethods[method];
+            if (!methodInfo) return;
+
+            try {
+                if (typeof QRCode === 'undefined') {
+                    console.error('[PAYMENT QR] QRCode library not loaded');
+                    return;
+                }
+
+                // Build payment URL based on method
+                let paymentUrl = '';
+                switch (method) {
+                    case 'venmo':
+                        paymentUrl = `venmo://paycharge?txn=pay&recipients=${encodeURIComponent(handle)}`;
+                        break;
+                    case 'cashapp':
+                        paymentUrl = `https://cash.app/${encodeURIComponent(handle)}`;
+                        break;
+                    case 'zelle':
+                        // Zelle is for knowledge purposes; actual payment would be through bank
+                        paymentUrl = `https://www.zellepay.com`;
+                        break;
+                }
+
+                // Store payment URL for button actions
+                this.currentPaymentUrl = paymentUrl;
+                this.currentPaymentMethod = method;
+                this.currentPaymentHandle = handle;
+
+                // Generate QR code
+                qrCodeDiv.innerHTML = '';
+                new QRCode(qrCodeDiv, {
+                    text: paymentUrl,
+                    width: 280,
+                    height: 280,
+                    colorDark: '#0071e3',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+
+                // Display info
+                methodDisplay.textContent = `Payment Method: ${methodInfo.name}`;
+                handleDisplay.textContent = `Handle: ${handle}`;
+
+                // Show container
+                qrContainer.classList.remove('hidden');
+                console.log('[PAYMENT QR] QR code generated for:', method);
+            } catch (error) {
+                console.error('[PAYMENT QR] Error generating QR code:', error);
+            }
+        };
+
+        // Generate QR on input change (debounced)
+        let qrGenerateTimeout;
+        handleInput.addEventListener('input', () => {
+            clearTimeout(qrGenerateTimeout);
+            qrGenerateTimeout = setTimeout(generatePaymentQR, 500);
+        });
+
+        // Save handle on blur (like Settings page does on line 5932)
+        handleInput.addEventListener('blur', async () => {
+            const method = methodSelect.value;
+            const handle = handleInput.value.trim();
+
+            if (!method) return;
+
+            // Only save if value changed
+            if (handles[method] === handle) return;
+
+            try {
+                // Update local state
+                if (!this.settings.paymentHandles) this.settings.paymentHandles = {};
+                this.settings.paymentHandles[method] = handle;
+
+                // Save to Firestore
+                await saveSettingsToFirestore(this.currentUser.uid, this.settings);
+                console.log('[PAYMENT QR] Handle saved for method:', method);
+
+                // Update handles reference
+                handles[method] = handle;
+            } catch (error) {
+                console.error('[PAYMENT QR] Error saving handle:', error);
+                await appleAlert('Save Failed', 'Could not save payment handle. Please try again.');
+            }
+        });
+
+        // Setup button handlers
+        if (copyBtn) {
+            const copyHandler = async () => {
+                if (this.currentPaymentUrl) {
+                    await navigator.clipboard.writeText(this.currentPaymentUrl);
+                    await appleAlert('Copied', 'Payment link copied to clipboard.');
+                }
+            };
+            copyBtn.addEventListener('click', copyHandler);
+            if (!this.paymentQrListeners) this.paymentQrListeners = {};
+            this.paymentQrListeners.copy = copyHandler;
+        }
+
+        if (downloadBtn) {
+            const downloadHandler = async () => {
+                try {
+                    const canvas = qrCodeDiv.querySelector('canvas');
+                    if (!canvas) {
+                        await appleAlert('Error', 'QR code not ready. Please try again.');
+                        return;
+                    }
+                    const link = document.createElement('a');
+                    link.href = canvas.toDataURL('image/png');
+                    const method = this.currentPaymentMethod || 'payment';
+                    link.download = `${method}-payment-qr.png`;
+                    link.click();
+                    await appleAlert('Downloaded', 'QR code saved to your device.');
+                } catch (error) {
+                    console.error('[PAYMENT QR] Download error:', error);
+                    await appleAlert('Error', 'Failed to download QR code.');
+                }
+            };
+            downloadBtn.addEventListener('click', downloadHandler);
+            if (!this.paymentQrListeners) this.paymentQrListeners = {};
+            this.paymentQrListeners.download = downloadHandler;
+        }
+
+        if (shareBtn) {
+            const shareHandler = async () => {
+                try {
+                    if (!this.currentPaymentUrl) {
+                        await appleAlert('No QR Code', 'Please select a payment method and enter your handle first.');
+                        return;
+                    }
+
+                    // Build compelling donation request message
+                    const scoutName = (this.currentUser.displayName || 'Scout').trim();
+                    const methodName = paymentMethods[this.currentPaymentMethod]?.name || 'Payment';
+
+                    const donationMessage = `Hi! 👋 This is ${scoutName}. I'm fundraising with my scout unit and would love your support! You can donate to me easily using ${methodName} - just scan the QR code or click the link below. Thank you for helping me reach my fundraising goal! 🙏`;
+
+                    if (navigator.share) {
+                        try {
+                            await navigator.share({
+                                title: `Support ${scoutName}'s Scout Fundraiser`,
+                                text: donationMessage,
+                                url: this.currentPaymentUrl
+                            });
+                            console.log('[PAYMENT QR] Shared successfully via native share');
+                        } catch (error) {
+                            // User cancelled share, not an error
+                            if (error.name !== 'AbortError') {
+                                console.error('[PAYMENT QR] Share error:', error);
+                            }
+                        }
+                    } else {
+                        // Fallback: Copy both message and URL
+                        const shareText = `${donationMessage}\n\nDonate here: ${this.currentPaymentUrl}`;
+                        await navigator.clipboard.writeText(shareText);
+                        await appleAlert('Copied', 'Message and link copied to clipboard. You can now paste and share anywhere!');
+                    }
+                } catch (error) {
+                    console.error('[PAYMENT QR] Share error:', error);
+                    await appleAlert('Error', 'Could not share. Please try copying the link instead.');
+                }
+            };
+            shareBtn.addEventListener('click', shareHandler);
+            if (!this.paymentQrListeners) this.paymentQrListeners = {};
+            this.paymentQrListeners.share = shareHandler;
+        }
+
+        console.log('[PAYMENT QR] Payment QR setup complete');
     }
 
     setupCommunicationPage() {
         // PERFORMANCE FIX: Clean up old listeners to prevent accumulation
         this.cleanupCommunicationListeners();
+
+        // Setup Unit QR Code (Leader/Admin only)
+        this.setupUnitQRCode();
+
+        // Setup Payment Method QR Code selector
+        this.setupPaymentQRCode();
 
         const copyLinkBtn = document.getElementById('comm-copy-link');
         const copyMsgBtn = document.getElementById('comm-copy-message');
@@ -3745,8 +4386,22 @@ class ScoutFundraiserApp {
         if (emailBtn) {
             const emailHandler = () => {
                 const payload = this.buildCommunicationPayload();
+                const messageText = (document.getElementById('comm-message').value || payload.message);
+
+                // Build email body with payment URL if available
+                let emailBody = messageText;
+                if (this.currentPaymentUrl && this.currentPaymentMethod) {
+                    const paymentMethods = {
+                        venmo: '💚 Venmo',
+                        cashapp: '💵 Cash App',
+                        zelle: '🏦 Zelle'
+                    };
+                    const methodName = paymentMethods[this.currentPaymentMethod] || 'Payment';
+                    emailBody = `${messageText}\n\nDonate via ${methodName}:\n${this.currentPaymentUrl}`;
+                }
+
                 const subject = encodeURIComponent('Support My Scout Fundraiser');
-                const body = encodeURIComponent((document.getElementById('comm-message').value || payload.message));
+                const body = encodeURIComponent(emailBody);
                 window.location.href = `mailto:?subject=${subject}&body=${body}`;
             };
             emailBtn.addEventListener('click', emailHandler);
@@ -3756,7 +4411,21 @@ class ScoutFundraiserApp {
         if (smsBtn) {
             const smsHandler = () => {
                 const payload = this.buildCommunicationPayload();
-                const body = encodeURIComponent((document.getElementById('comm-message').value || payload.message));
+                const messageText = (document.getElementById('comm-message').value || payload.message);
+
+                // Build SMS body with payment URL if available
+                let smsBody = messageText;
+                if (this.currentPaymentUrl && this.currentPaymentMethod) {
+                    const paymentMethods = {
+                        venmo: '💚 Venmo',
+                        cashapp: '💵 Cash App',
+                        zelle: '🏦 Zelle'
+                    };
+                    const methodName = paymentMethods[this.currentPaymentMethod] || 'Payment';
+                    smsBody = `${messageText}\n\nDonate via ${methodName}: ${this.currentPaymentUrl}`;
+                }
+
+                const body = encodeURIComponent(smsBody);
                 window.location.href = `sms:?body=${body}`;
             };
             smsBtn.addEventListener('click', smsHandler);
@@ -3766,17 +4435,48 @@ class ScoutFundraiserApp {
         if (shareBtn) {
             const shareHandler = async () => {
                 const payload = this.buildCommunicationPayload();
-                const text = (document.getElementById('comm-message').value || payload.message);
-                if (navigator.share) {
-                    try {
-                        await navigator.share({ title: 'Support My Scout Fundraiser', text, url: payload.donationUrl });
-                        return;
-                    } catch (_e) {
-                        // fallback below
+                const customMessage = document.getElementById('comm-message');
+                let text = (customMessage && customMessage.value) || payload.message;
+                let shareUrl = payload.donationUrl;
+
+                // If a payment QR is selected, offer to include it
+                if (this.currentPaymentUrl && this.currentPaymentMethod) {
+                    const paymentMethods = {
+                        venmo: '💚 Venmo',
+                        cashapp: '💵 Cash App',
+                        zelle: '🏦 Zelle'
+                    };
+                    const methodName = paymentMethods[this.currentPaymentMethod] || 'Payment';
+                    const includeQr = await appleConfirm(
+                        'Include Payment Method?',
+                        `Would you like to include your ${methodName} donation link in the message?`,
+                        'Include',
+                        'Skip'
+                    );
+                    if (includeQr) {
+                        text = `${text}\n\nDonate via ${methodName}: ${this.currentPaymentUrl}`;
+                        shareUrl = this.currentPaymentUrl;
                     }
                 }
+
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            title: 'Support My Scout Fundraiser',
+                            text,
+                            url: shareUrl
+                        });
+                        return;
+                    } catch (error) {
+                        // User cancelled or share failed
+                        if (error.name !== 'AbortError') {
+                            console.error('[COMMUNICATION] Share error:', error);
+                        }
+                    }
+                }
+                // Fallback: Copy to clipboard
                 await navigator.clipboard.writeText(text);
-                await appleAlert('Copied', 'Sharing is not supported on this browser. Message copied to clipboard.');
+                await appleAlert('Copied', 'Message copied to clipboard. You can now paste and share anywhere!');
             };
             shareBtn.addEventListener('click', shareHandler);
             this.communicationListeners.share = shareHandler;
@@ -5144,6 +5844,19 @@ class ScoutFundraiserApp {
         document.getElementById('admin-role').textContent = `Role: ${roleDisplay}`;
         document.getElementById('admin-avatar').textContent = name.charAt(0).toUpperCase();
 
+        // Show Unit ID for admins and leaders
+        const unitIdElement = document.getElementById('admin-unit-id');
+        const unitIdDisplay = document.getElementById('unit-id-display');
+        const isAdminOrLeader = this.currentRole === 'admin' || this.currentRole === 'leader';
+        if (unitIdElement && unitIdDisplay) {
+            if (isAdminOrLeader && this.currentUnitId) {
+                unitIdDisplay.textContent = this.currentUnitId;
+                unitIdElement.style.display = 'block';
+            } else {
+                unitIdElement.style.display = 'none';
+            }
+        }
+
         // Fundraising settings
         document.getElementById('fundraising-goal').value = this.settings.fundraisingGoal || DEFAULTS.FUNDRAISING_GOAL;
         document.getElementById('card-price').value = this.settings.cardPrice || DEFAULTS.CARD_PRICE;
@@ -5229,6 +5942,16 @@ class ScoutFundraiserApp {
                     });
                 });
             });
+        }
+
+        // Unit Admin: User Management
+        const userManagementCard = document.getElementById('user-management-card');
+        const userManagementList = document.getElementById('user-management-list');
+        if (userManagementCard) {
+            userManagementCard.classList.toggle('hidden', !isUnitAdmin);
+        }
+        if (isUnitAdmin && userManagementList) {
+            this.loadAndDisplayUsers();
         }
 
         const personalGoalInput = document.getElementById('personal-goal');
@@ -5491,6 +6214,105 @@ class ScoutFundraiserApp {
             closeButtons: [],
             modalBackdrop: []
         };
+    }
+
+    async loadAndDisplayUsers() {
+        const userManagementList = document.getElementById('user-management-list');
+        if (!userManagementList) return;
+
+        // Show loading state
+        userManagementList.innerHTML = '<p class="loading-text">Loading users...</p>';
+
+        try {
+            // Fetch all users and memberships in the unit
+            const users = await getAllUsersFromFirestore(this.currentUnitId);
+            const memberships = await getAllMembershipsFromFirestore(this.currentUnitId);
+
+            // Create a set of user IDs we already have
+            const userIds = new Set(users.map(u => u.id));
+
+            // Combine users and memberships, avoiding duplicates
+            const allUserData = [
+                ...users,
+                ...memberships.filter(m => !userIds.has(m.id))
+            ];
+
+            if (allUserData.length === 0) {
+                userManagementList.innerHTML = '<p class="loading-text">No users found in this unit.</p>';
+                return;
+            }
+
+            // Sort users by role (admin first, then leader, then scout, then parent)
+            const roleOrder = { admin: 0, leader: 1, scout: 2, parent: 3 };
+            allUserData.sort((a, b) => {
+                const aOrder = roleOrder[a.role] ?? 999;
+                const bOrder = roleOrder[b.role] ?? 999;
+                if (aOrder !== bOrder) return aOrder - bOrder;
+                return (a.displayName || '').localeCompare(b.displayName || '');
+            });
+
+            // Render users
+            const html = allUserData.map(user => {
+                const initial = (user.displayName || '?').charAt(0).toUpperCase();
+                const isCurrentUser = user.id === this.currentUser.uid;
+                const roleClass = `role-${user.role}`;
+
+                return `
+                    <div class="user-management-item">
+                        <div class="user-management-avatar">${escapeHTML(initial)}</div>
+                        <div class="user-management-info">
+                            <div class="user-management-name">
+                                ${escapeHTML(user.displayName)}
+                                ${isCurrentUser ? '<span style="color: var(--text-secondary); font-size: 0.85rem; font-weight: normal;">(You)</span>' : ''}
+                            </div>
+                            <div class="user-management-email">${escapeHTML(user.email)}</div>
+                        </div>
+                        <span class="user-management-role ${roleClass}">${escapeHTML(user.role)}</span>
+                        <div class="user-management-actions">
+                            ${!isCurrentUser ? `<button class="btn btn-danger btn-small" data-user-id="${escapeHTML(user.id)}" data-user-name="${escapeHTML(user.displayName)}">Delete</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            userManagementList.innerHTML = html;
+
+            // Add delete button event listeners
+            userManagementList.querySelectorAll('button[data-user-id]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const userId = btn.dataset.userId;
+                    const userName = btn.dataset.userName;
+                    await this.handleDeleteUser(userId, userName);
+                });
+            });
+
+        } catch (e) {
+            console.error('Error loading users:', e);
+            userManagementList.innerHTML = '<p class="loading-text" style="color: var(--danger);">Failed to load users. Please try again.</p>';
+        }
+    }
+
+    async handleDeleteUser(userId, userName) {
+        const confirmed = await appleConfirm(
+            'Delete User',
+            `Are you sure you want to delete ${userName}? This will remove all their data including sales records. This action cannot be undone.`
+        );
+
+        if (!confirmed) return;
+
+        try {
+            const success = await deleteUserFromFirestore(userId);
+            if (success) {
+                await appleAlert('Success', `${userName} has been deleted.`);
+                // Reload the user list
+                await this.loadAndDisplayUsers();
+            } else {
+                await appleAlert('Delete Failed', 'Could not delete user. Please try again.');
+            }
+        } catch (e) {
+            console.error('Error deleting user:', e);
+            await appleAlert('Delete Failed', 'An error occurred while deleting the user.');
+        }
     }
 
     setupModals() {
