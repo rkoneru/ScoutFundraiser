@@ -133,7 +133,16 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      // Allow self-read, or unit members can read all users in their unit
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId
+        || (userAccountExists(userId) && isMemberOfUnit(userAccount(userId).data.unitId))
+      );
+
+      // Allow unit members to list all users in their unit
+      allow list: if isSignedIn()
+        && userAccountExists(request.auth.uid)
+        && isMemberOfUnit(userAccount(request.auth.uid).data.unitId);
 
       // Users can create their own account doc at signup.
       // Critical: role + unitId become immutable client-side to prevent privilege escalation.
@@ -154,7 +163,11 @@ service cloud.firestore {
         && request.resource.data.unitId == resource.data.unitId
         && normalizeRole(request.resource.data.role) == normalizeRole(resource.data.role);
 
-      allow delete: if false;
+      // Allow unit admins to delete users in their unit (but not themselves)
+      allow delete: if isSignedIn() 
+        && request.auth.uid != userId
+        && userAccountExists(userId)
+        && isUnitAdmin(userAccount(userId).data.unitId);
 
       match /sales/{saleId} {
         allow read: if isSignedIn() && (request.auth.uid == userId || isSameUnitAsUser(userId));
@@ -174,6 +187,12 @@ service cloud.firestore {
         || (membershipExists(request.auth.uid)
             && resource.data.unitId == membership(request.auth.uid).data.unitId)
       );
+      
+      // Allow admins to list all memberships in their unit
+      allow list: if isSignedIn() 
+        && membershipExists(request.auth.uid)
+        && isUnitAdmin(membership(request.auth.uid).data.unitId);
+        
       // Membership creation is allowed for the signed-in user, but privileged roles are restricted.
       allow create: if isSignedIn()
         && request.auth.uid == userId
@@ -199,7 +218,11 @@ service cloud.firestore {
           || (isUnitAdmin(resource.data.unitId))
         );
 
-      allow delete: if false;
+      // Allow unit admins to delete memberships in their unit (but not their own)
+      allow delete: if isSignedIn() 
+        && request.auth.uid != userId
+        && membershipExists(userId)
+        && isUnitAdmin(membership(userId).data.unitId);
     }
 
     match /profiles/{userId} {

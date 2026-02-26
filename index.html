@@ -8,7 +8,7 @@
     <!-- SECURITY FIX: Content Security Policy to prevent XSS attacks -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/firebasejs/ https://cdn.jsdelivr.net https://apis.google.com;
+        script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/firebasejs/ https://cdn.jsdelivr.net https://apis.google.com https://cdnjs.cloudflare.com;
         style-src 'self' 'unsafe-inline';
         img-src 'self' data: https:;
         connect-src 'self' https://*.firebaseio.com https://*.firebase.googleapis.com https://*.googleapis.com https://www.gstatic.com https://cdn.jsdelivr.net;
@@ -20,6 +20,8 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>💰</text></svg>">
     <title>Troop 242 Scout Fundraiser</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
     <!-- SVG Icon Sprite (hidden) -->
@@ -211,6 +213,17 @@
                 <button type="submit" class="btn btn-primary" id="signup-btn" aria-label="Submit sign up form">Create Account</button>
                 <p class="signup-error" id="signup-error" aria-live="polite"></p>
             </form>
+
+            <!-- QR Code Section for Unit ID - UNUSED (Moved to Communication/Share Page) -->
+            <div id="qr-code-section" class="qr-code-section hidden">
+                <div class="qr-code-container">
+                    <h3>Join Unit via QR Code</h3>
+                    <p class="qr-code-note">Scan with your phone to join</p>
+                    <div id="qrcode" class="qr-code-display"></div>
+                    <p class="qr-code-unit-id">Unit ID: <code id="qr-unit-id-display"></code></p>
+                    <button type="button" class="btn btn-secondary" id="close-qr-btn">Close</button>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -603,14 +616,75 @@
                     <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
                 </div>
 
+                <!-- UNIT SIGNUP QR CODE (Leader/Admin Only) -->
+                <div id="unit-qr-section" class="card unit-qr-card hidden">
+                    <h3>📱 Share Unit Signup QR Code</h3>
+                    <p class="card-subtitle">Leaders, Parents, and Scouts can scan this QR code to join the unit</p>
+
+                    <div class="qr-display-container">
+                        <div id="unit-qrcode" class="qr-code-box"></div>
+                    </div>
+
+                    <div class="unit-qr-info">
+                        <p class="info-label">Unit ID:</p>
+                        <code id="unit-qr-display-id" class="unit-id-code">-</code>
+                    </div>
+
+                    <div class="unit-qr-actions">
+                        <button type="button" class="btn btn-secondary" id="unit-qr-copy-link" aria-label="Copy signup link">Copy Link</button>
+                        <button type="button" class="btn btn-secondary" id="unit-qr-download" aria-label="Download QR code as image">Download QR</button>
+                        <button type="button" class="btn btn-primary" id="unit-qr-share" aria-label="Share QR code">Share</button>
+                    </div>
+
+                    <p class="step-note">Share this QR code or link with scouts, parents, and leaders to help them join the unit fundraiser.</p>
+                </div>
+
                 <div class="card">
-                    <h3>Personal Fundraising Link</h3>
+                    <h3>💳 Personal Fundraising/Donation QR Code</h3>
+                    <p class="card-subtitle">Select your payment method and generate a QR code for supporters to donate</p>
+
+                    <!-- Payment Method Selection -->
                     <div class="form-group">
+                        <label for="payment-method-select">Select Payment Method:</label>
+                        <select id="payment-method-select" class="form-select-styled">
+                            <option value="">-- Choose a payment method --</option>
+                            <option value="venmo">💚 Venmo</option>
+                            <option value="cashapp">💵 Cash App</option>
+                            <option value="zelle">🏦 Zelle</option>
+                        </select>
+                    </div>
+
+                    <!-- Payment Handle Input -->
+                    <div id="payment-handle-group" class="form-group hidden">
+                        <label id="payment-handle-label" for="payment-handle-input">Payment Handle:</label>
+                        <input type="text" id="payment-handle-input" placeholder="Enter your handle" class="form-input">
+                        <p id="payment-handle-hint" class="form-hint"></p>
+                    </div>
+
+                    <!-- Generated QR Code -->
+                    <div id="payment-qr-container" class="payment-qr-container hidden">
+                        <p class="info-label">Payment QR Code:</p>
+                        <div id="payment-qr-code" class="payment-qr-code"></div>
+                        <div class="payment-qr-info">
+                            <p id="payment-method-display"></p>
+                            <p id="payment-handle-display"></p>
+                        </div>
+                        <div class="payment-qr-actions">
+                            <button type="button" class="btn btn-secondary" id="payment-qr-copy" aria-label="Copy donation link">Copy Link</button>
+                            <button type="button" class="btn btn-secondary" id="payment-qr-download" aria-label="Download payment QR code">Download QR</button>
+                            <button type="button" class="btn btn-primary" id="payment-qr-share" aria-label="Share payment QR">Share</button>
+                        </div>
+                    </div>
+
+                  <!--  <hr>
+
+                     <h3>📱 Personal Fundraising Link</h3>
+                    <div class="form-group" hidden>
                         <label for="comm-link">Share Link</label>
                         <input type="text" id="comm-link" readonly>
                     </div>
                     <div id="comm-qr" class="payment-qr-code"></div>
-                    <p class="step-note">Share this link or QR code with family and community supporters.</p>
+                    <p class="step-note">Share this link with family and community supporters.</p> -->
                 </div>
 
                 <div class="card">
@@ -661,26 +735,27 @@
 
                 <div class="card">
                     <h3>Products & Inventory</h3>
-                    <!-- Hardcoded Active Product Display (Session 8B) -->
                     <div id="active-product-display" class="info-box-blue">
                         <!-- Row 1: Product Info -->
-                        <div class="product-info-grid">
-                            <div>
-                                <label class="product-info-label">Product Name</label>
-                                <input type="text" id="display-product-name" readonly class="product-info-input" title="Product Name">
+                        <div class="form-row max-width-600">
+                            <div class="form-group">
+                                <label for="display-product-name">Product Name</label>
+                                <input type="text" id="display-product-name" readonly class="form-input-disabled" title="Product Name">
                             </div>
-                            <div>
-                                <label for="display-product-sku" class="product-field-label">SKU</label>
-                                <input type="text" id="display-product-sku" readonly class="product-field-input" title="Product SKU">
+                            <div class="form-group">
+                                <label for="display-product-sku">SKU</label>
+                                <input type="text" id="display-product-sku" readonly class="form-input-disabled" title="Product SKU">
                             </div>
                         </div>
                         <!-- Row 2: Stock Adjustment -->
-                        <div class="stock-adjustment-grid">
-                            <div>
-                                <label class="stock-adjustment-label">Adjust Stock (+ to add, - to remove)</label>
-                                <input type="number" id="stock-adjustment-input" placeholder="Enter amount" class="stock-adjustment-input" title="Stock adjustment amount">
+                        <div class="form-row max-width-600">
+                            <div class="form-group">
+                                <label for="stock-adjustment-input">Adjust Stock (+ to add, - to remove)</label>
+                                <input type="number" id="stock-adjustment-input" placeholder="Enter amount" class="form-input" title="Stock adjustment amount">
                             </div>
-                            <button type="button" class="btn btn-secondary btn-small stock-adjust-btn" id="stock-adjust-btn" aria-label="Adjust product stock">Adjust</button> 
+                            <div class="form-group align-self-end">
+                                <button type="button" class="btn btn-secondary" id="stock-adjust-btn" aria-label="Adjust product stock">Adjust</button>
+                            </div>
                         </div>
                     </div>
                     <div id="product-list"></div>
@@ -777,7 +852,10 @@
                         <div class="admin-profile-info">
                             <h3 id="admin-name">Scout</h3>
                             <p id="admin-email">email@example.com</p>
-                            <p id="admin-role" class="admin-role">Role: Scout</p>
+                            <div class="admin-profile-info-row">
+                                <p id="admin-role" class="admin-role">Role: Scout</p>
+                                <p id="admin-unit-id" class="admin-unit-id" style="display: none;">Unit ID: <code id="unit-id-display"></code></p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -828,6 +906,14 @@
                     <h3>Page Visibility (Admin)</h3>
                     <p class="step-note">Hide pages for other roles in this unit. This does not grant extra permissions.</p>
                     <div id="page-visibility-controls"></div>
+                </div>
+
+                <div class="card hidden" id="user-management-card">
+                    <h3>User Management (Admin)</h3>
+                    <p class="step-note">View and manage all users in your unit. You cannot delete yourself.</p>
+                    <div id="user-management-list">
+                        <p class="loading-text">Loading users...</p>
+                    </div>
                 </div>
 
                 <div class="card">

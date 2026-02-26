@@ -189,6 +189,78 @@ body {
     color: #ffffff;
 }
 
+/* ==================== QR CODE SECTION ==================== */
+
+.qr-code-section {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.qr-code-section:not(.hidden) {
+    display: flex;
+}
+
+.qr-code-container {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+}
+
+.qr-code-container h3 {
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-size: 1.3rem;
+}
+
+.qr-code-note {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.qr-code-display {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    border: 2px solid #f0f0f0;
+}
+
+.qr-code-display canvas {
+    max-width: 100%;
+}
+
+.qr-code-unit-id {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.qr-code-unit-id code {
+    background: #f0f0f0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.qr-code-container .btn-secondary {
+    margin-top: 1rem;
+}
+
 /* ==================== APP SHELL ==================== */
 
 #app-shell.hidden {
@@ -1561,6 +1633,24 @@ svg.icon use {
     margin-top: 0.5rem;
 }
 
+.admin-profile-info-row {
+    display: flex;
+    gap: 2rem;
+    margin-top: 0.5rem;
+}
+
+.admin-unit-id {
+    font-size: 0.9rem;
+}
+
+.admin-unit-id code {
+    background: #f0f0f0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
 /* ==================== FIELD CONTROL TOGGLES ==================== */
 
 .field-control-row {
@@ -2189,4 +2279,334 @@ svg.icon use {
 
 .align-self-end {
     align-self: end;
+}
+
+/* ==================== USER MANAGEMENT ==================== */
+
+.user-management-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.2s;
+}
+
+.user-management-item:last-child {
+    border-bottom: none;
+}
+
+.user-management-item:hover {
+    background-color: var(--secondary-color);
+}
+
+.user-management-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.user-management-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-management-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.user-management-email {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-management-role {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.user-management-role.role-admin {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.user-management-role.role-leader {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.user-management-role.role-scout {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.user-management-role.role-parent {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.user-management-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.loading-text {
+    text-align: center;
+    padding: 1rem;
+    color: var(--text-secondary);
+}
+
+/* ==================== UNIT QR CODE SECTION ==================== */
+
+.unit-qr-card {
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+    border: 2px solid #0071e3;
+}
+
+.unit-qr-card h3 {
+    color: #0071e3;
+    margin-bottom: 0.25rem;
+}
+
+.card-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+.qr-display-container {
+    display: flex;
+    justify-content: center;
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #d2d2d7;
+}
+
+.qr-code-box {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.qr-code-box canvas {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+}
+
+.unit-qr-info {
+    text-align: center;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.info-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    display: block;
+}
+
+.unit-id-code {
+    font-size: 1.125rem;
+    font-weight: 600;
+    background: #f5f5f7;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    letter-spacing: 0.05em;
+    color: #0071e3;
+}
+
+.unit-qr-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.unit-qr-actions .btn {
+    flex: 1;
+    min-width: 120px;
+    max-width: 180px;
+}
+
+@media (max-width: 480px) {
+    .unit-qr-card {
+        margin: 1rem 0;
+    }
+
+    .qr-display-container {
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+
+    .unit-qr-actions {
+        flex-direction: column;
+    }
+
+    .unit-qr-actions .btn {
+        max-width: none;
+        width: 100%;
+    }
+
+    .unit-id-code {
+        font-size: 1rem;
+    }
+}
+
+/* ==================== PAYMENT QR CODE SECTION ==================== */
+
+.payment-qr-container {
+    border-top: 1px solid #d2d2d7;
+    padding-top: 2rem;
+    margin-top: 2rem;
+}
+
+.payment-qr-container.hidden {
+    display: none;
+}
+
+.payment-qr-container .info-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    display: block;
+    font-weight: 600;
+}
+
+.payment-qr-code {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 1.5rem 0;
+    border: 2px solid #f0f0f0;
+    min-height: 280px;
+}
+
+.payment-qr-code canvas,
+.payment-qr-code img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.payment-qr-info {
+    text-align: center;
+    padding: 1rem;
+    background: rgba(0, 113, 227, 0.05);
+    border-radius: 8px;
+    margin: 1rem 0;
+    border-left: 4px solid #0071e3;
+}
+
+.payment-qr-info p {
+    margin: 0.5rem 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.payment-qr-info p:first-child {
+    font-weight: 600;
+    color: #0071e3;
+}
+
+.payment-qr-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+.payment-qr-actions .btn {
+    flex: 1;
+    min-width: 120px;
+    max-width: 180px;
+}
+
+/* Payment Method Select Styling */
+#payment-method-select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    font-size: 1rem;
+    background: white;
+    cursor: pointer;
+}
+
+#payment-method-select:focus {
+    outline: none;
+    border-color: #0071e3;
+    box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.1);
+}
+
+#payment-handle-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+#payment-handle-input:focus {
+    outline: none;
+    border-color: #0071e3;
+    box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.1);
+}
+
+.form-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+    .payment-qr-code {
+        min-height: 250px;
+        padding: 0.75rem;
+    }
+
+    .payment-qr-actions {
+        flex-direction: column;
+    }
+
+    .payment-qr-actions .btn {
+        max-width: none;
+        width: 100%;
+    }
+
+    .payment-qr-container {
+        padding-top: 1.5rem;
+        margin-top: 1.5rem;
+    }
 }
