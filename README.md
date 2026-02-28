@@ -1,2 +1,1 @@
-# Grubmaster.github.io
-Grubmaster
+Scout Fundraiser
