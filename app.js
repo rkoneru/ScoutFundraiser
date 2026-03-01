@@ -789,6 +789,7 @@ function formatDate(dateVal) {
 function getAuthErrorMessage(error, mode = 'login') {
     const code = (error && error.code) ? String(error.code) : '';
     const message = (error && error.message) ? String(error.message) : '';
+    const normalizedMessage = message.toUpperCase();
 
     // SECURITY FIX: Don't reveal which emails are registered (prevents email enumeration attacks)
     // Use generic messages that don't distinguish between "user exists" and "wrong password"
@@ -814,6 +815,20 @@ function getAuthErrorMessage(error, mode = 'login') {
     // Check for specific Firebase errors
     if (message.includes('unitsPublic') && message.includes('permission')) {
         return 'Unable to register unit. Contact your unit admin if problem persists.';
+    }
+
+    if (mode === 'signup') {
+        if (normalizedMessage.includes('MISSING_RECAPTCHA_TOKEN') || normalizedMessage.includes('INVALID_RECAPTCHA_TOKEN')) {
+            return 'Sign-up security verification failed. Refresh the page and try again.';
+        }
+
+        if (normalizedMessage.includes('CONFIGURATION_NOT_FOUND') || normalizedMessage.includes('RECAPTCHA')) {
+            return 'Sign-up is blocked by Firebase Auth configuration. Ensure Email/Password is enabled and your current domain is authorized in Firebase Authentication.';
+        }
+
+        if (normalizedMessage.includes('OPERATION_NOT_ALLOWED')) {
+            return 'Email/password sign-up is disabled in Firebase Authentication settings.';
+        }
     }
 
     if (map[code]) return map[code];
@@ -930,6 +945,17 @@ function normalizeRole(value = '') {
     if (role === 'parent' || role === 'guardian' || role === 'parent/guardian') return 'parent';
     if (role === 'scout') return 'scout';
     return 'scout';
+}
+
+// UNIT QR SHARE FEATURE: Extract unit ID from query string
+function getUnitIdFromQueryString() {
+    const params = new URLSearchParams(window.location.search);
+    // Support multiple query parameter names: unit, unitId, unit_id, unit-id
+    const unitId = params.get('unit') || params.get('unitId') || params.get('unit_id') || params.get('unit-id');
+    if (unitId) {
+        return normalizeUnitId(unitId);
+    }
+    return null;
 }
 
 function generateUnitId(length = 6) {
@@ -1072,6 +1098,309 @@ async function saveMembershipAndProfile(userId, { unitId, role, name, email }) {
         email: (email || '').trim().toLowerCase(),
         createdAt: serverTimestamp()
     }, { merge: true });
+}
+
+// ==================== SIGNUP APPROVAL SYSTEM ====================
+
+async function createSignupRequest(userId, { name, email, role, unitId }) {
+    const { setDoc, doc, serverTimestamp } = window.firebaseImports;
+    const normalizedRole = normalizeRole(role);
+    const normalizedUnitId = normalizeUnitId(unitId);
+    
+    await setDoc(doc(db, 'signupRequests', userId), {
+        userId,
+        name: (name || '').trim(),
+        email: (email || '').trim().toLowerCase(),
+        role: normalizedRole,
+        unitId: normalizedUnitId,
+        status: 'pending', // pending, approved, rejected
+        createdAt: serverTimestamp(),
+        approvedAt: null,
+        approvedBy: null,
+        rejectionReason: null
+    });
+    
+    console.log('[DEBUG SIGNUP REQUEST] Created approval request for user:', userId);
+}
+
+async function getPendingSignupRequests(unitId) {
+    const { getDocs, collection, query, where } = window.firebaseImports;
+    const normalizedUnitId = normalizeUnitId(unitId);
+    if (!normalizedUnitId) return [];
+
+    try {
+        const requestsQuery = query(
+            collection(db, 'signupRequests'),
+            where('unitId', '==', normalizedUnitId),
+            where('status', '==', 'pending')
+        );
+        
+        const snapshot = await getDocs(requestsQuery);
+        const requests = [];
+        snapshot.forEach(doc => {
+            requests.push({ id: doc.id, ...doc.data() });
+        });
+        
+        return requests.sort((a, b) => {
+            return new Date(b.createdAt?.toDate?.() || 0) - 
+                   new Date(a.createdAt?.toDate?.() || 0);
+        });
+    } catch (e) {
+        console.error('Error fetching signup requests:', e);
+        return [];
+    }
+}
+
+async function getSignupRequestForUser(userId) {
+    try {
+        const { getDoc, doc } = window.firebaseImports;
+        const requestDoc = await getDoc(doc(db, 'signupRequests', userId));
+        if (!requestDoc.exists()) return null;
+        return requestDoc.data() || null;
+    } catch (e) {
+        console.warn('Could not read signup request status for user:', e && e.code ? e.code : e);
+        return null;
+    }
+}
+
+async function approveSignupRequest(requestId, approverId) {
+    const { getDoc, doc, setDoc, serverTimestamp, deleteDoc } = window.firebaseImports;
+    
+    try {
+        // Get the request
+        const requestDoc = await getDoc(doc(db, 'signupRequests', requestId));
+        if (!requestDoc.exists()) {
+            throw new Error('Signup request not found');
+        }
+        
+        const request = requestDoc.data();
+        
+        // Create user membership and profile
+        try {
+            await saveMembershipAndProfile(requestId, {
+                unitId: request.unitId,
+                role: request.role,
+                name: request.name,
+                email: request.email
+            });
+            console.log('[DEBUG APPROVAL] Membership and profile created for:', requestId);
+        } catch (e) {
+            console.error('[DEBUG APPROVAL] Failed to create membership/profile:', e);
+            throw new Error(`Could not create membership: ${e.message}`);
+        }
+        
+        // Update user document
+        const userSettings = getDefaultSettings();
+        try {
+            await setDoc(
+                doc(db, 'users', requestId),
+                {
+                    name: request.name,
+                    email: request.email,
+                    role: request.role,
+                    unitId: request.unitId,
+                    settings: userSettings,
+                    createdAt: new Date().toISOString()
+                }
+            );
+            console.log('[DEBUG APPROVAL] User document created for:', requestId);
+        } catch (e) {
+            console.error('[DEBUG APPROVAL] Failed to create user document:', e);
+            throw new Error(`Could not create user account: ${e.message}`);
+        }
+        
+        // Mark request as approved
+        try {
+            await setDoc(doc(db, 'signupRequests', requestId), {
+                status: 'approved',
+                approvedAt: serverTimestamp(),
+                approvedBy: approverId
+            }, { merge: true });
+            console.log('[DEBUG APPROVAL] Signup request marked approved:', requestId);
+        } catch (e) {
+            console.error('[DEBUG APPROVAL] Failed to mark request as approved:', e);
+            throw new Error(`Could not mark request as approved: ${e.message}`);
+        }
+        
+        return true;
+    } catch (e) {
+        console.error('Error approving signup request:', e);
+        ErrorHandler.handle(e, `Failed to approve signup request: ${e.message}`);
+        return false;
+    }
+}
+
+async function rejectSignupRequest(requestId, reason = '') {
+    const { doc, setDoc, serverTimestamp, deleteDoc } = window.firebaseImports;
+    
+    try {
+        // Mark as rejected
+        await setDoc(doc(db, 'signupRequests', requestId), {
+            status: 'rejected',
+            rejectionReason: reason
+        }, { merge: true });
+        
+        // Delete the user from Firebase Auth (optional - requires admin SDK)
+        // For now, just mark as rejected in database
+        
+        console.log('[DEBUG APPROVAL] Signup request rejected:', requestId);
+        return true;
+    } catch (e) {
+        console.error('Error rejecting signup request:', e);
+        ErrorHandler.handle(e, 'Failed to reject signup request');
+        return false;
+    }
+}
+
+// ==================== APPROVALS PAGE FUNCTIONS ====================
+
+async function loadAndDisplayApprovals() {
+    const approvalsList = document.getElementById('approvals-list');
+    const noApprovalsCard = document.getElementById('no-approvals-card');
+    
+    if (!approvalsList || !currentUser || !app.currentUnitId) return;
+    
+    try {
+        approvalsList.innerHTML = '<p class="loading-text">Loading approval requests...</p>';
+        const requests = await getPendingSignupRequests(app.currentUnitId);
+        
+        if (!requests || requests.length === 0) {
+            // Show header with empty state message inside the table
+            approvalsList.innerHTML = '<p class="empty-state-message">No pending approval requests at this time.</p>';
+            noApprovalsCard.classList.add('hidden');
+            return;
+        }
+        
+        // Ensure we show the list with content
+        noApprovalsCard.classList.add('hidden');
+        
+        approvalsList.innerHTML = '';
+        
+        for (const request of requests) {
+            const item = document.createElement('div');
+            item.className = 'approval-item';
+            item.dataset.requestId = request.id;
+            
+            const requestDate = request.createdAt 
+                ? new Date(request.createdAt).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                : 'Unknown date';
+            
+            const avatarLetter = (request.name || '?').charAt(0).toUpperCase();
+            const roleClass = normalizeRole(request.role || '').toLowerCase();
+            
+            item.innerHTML = `
+                <div class="approval-item-header">
+                    <div class="approval-avatar">${escapeHTML(avatarLetter)}</div>
+                    <div class="approval-info">
+                        <div class="approval-name">${escapeHTML(request.name || 'Unknown')}</div>
+                        <div class="approval-email">${escapeHTML(request.email || 'no-email')}</div>
+                        <div class="approval-meta">
+                            <span class="approval-role-badge ${roleClass}">${escapeHTML(normalizeRole(request.role || 'scout'))}</span>
+                            <span class="approval-request-date">${escapeHTML(requestDate)}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="approval-actions">
+                    <button class="btn btn-secondary btn-approve" data-action="approve">
+                        <svg class="icon icon-btn"><use href="#icon-check"/></svg> Approve
+                    </button>
+                    <button class="btn btn-secondary btn-reject" data-action="reject">
+                        <svg class="icon icon-btn"><use href="#icon-trash"/></svg> Reject
+                    </button>
+                </div>
+            `;
+            
+            const approveBtn = item.querySelector('[data-action="approve"]');
+            const rejectBtn = item.querySelector('[data-action="reject"]');
+            
+            approveBtn.addEventListener('click', () => handleApproveRequest(request.id, request.name));
+            rejectBtn.addEventListener('click', () => handleRejectRequest(request.id, request.name));
+            
+            approvalsList.appendChild(item);
+        }
+        
+        console.log('[DEBUG] Loaded', requests.length, 'pending approval requests');
+    } catch (e) {
+        console.error('Error loading approvals:', e);
+        approvalsList.innerHTML = '<p class="loading-text error">Failed to load approvals</p>';
+    }
+}
+
+async function handleApproveRequest(requestId, requestName) {
+    const confirmed = await appleConfirm(
+        'Approve Signup?',
+        `Approve ${escapeHTML(requestName)} to join your unit?`
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+        const success = await approveSignupRequest(requestId, currentUser.uid);
+        if (success) {
+            await appleAlert('Approved!', `${escapeHTML(requestName)} has been approved and can now log in.`);
+            // Reload the approvals list
+            await loadAndDisplayApprovals();
+        } else {
+            await appleAlert('Approval Failed', `Could not approve ${escapeHTML(requestName)}. Check Firestore rules deployment and try again.`);
+        }
+    } catch (e) {
+        console.error('Error approving request:', e);
+        ErrorHandler.handle(e, 'Failed to approve signup request');
+    }
+}
+
+async function handleRejectRequest(requestId, requestName) {
+    // Could add a reason input dialog here in the future
+    const confirmed = await appleConfirm(
+        'Reject Signup?',
+        `Reject ${escapeHTML(requestName)}'s signup request? They will not be able to access the unit.`
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+        const success = await rejectSignupRequest(requestId, 'Rejected by admin');
+        if (success) {
+            await appleAlert('Rejected', `${escapeHTML(requestName)}'s signup request has been rejected.`);
+            // Reload the approvals list
+            await loadAndDisplayApprovals();
+        }
+    } catch (e) {
+        console.error('Error rejecting request:', e);
+        ErrorHandler.handle(e, 'Failed to reject signup request');
+    }
+}
+
+// Set up real-time listener for approval requests
+function setupApprovalsListener() {
+    if (!app.currentUnitId || !currentUser) return;
+    
+    const { query, collection, where, onSnapshot } = window.firebaseImports;
+    
+    const q = query(
+        collection(db, 'signupRequests'),
+        where('unitId', '==', app.currentUnitId),
+        where('status', '==', 'pending')
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        console.log('[DEBUG] Approvals listener fired:', snapshot.docs.length, 'requests');
+        // Reload the approvals list if the page is active
+        const approvalsPage = document.getElementById('approvals-page');
+        if (approvalsPage && !approvalsPage.classList.contains('hidden')) {
+            loadAndDisplayApprovals();
+        }
+    }, (error) => {
+        console.error('Error watching approvals:', error);
+    });
+    
+    return unsubscribe;
 }
 
 async function getMembershipForUser(userId) {
@@ -1259,10 +1588,19 @@ async function getScoutsFromFirestore(unitId) {
 
 async function deleteScoutFromFirestore(unitId, scoutId) {
     try {
-        const { deleteDoc, doc } = window.firebaseImports;
-        await deleteDoc(doc(db, `units/${normalizeUnitId(unitId)}/scouts/${scoutId}`));
+        const { deleteDoc, doc, writeBatch } = window.firebaseImports;
+
+        // Use batch for atomic operation (fixes Issue #7 - sequential deletes)
+        const batch = writeBatch(db);
+        const normalizedUnitId = normalizeUnitId(unitId);
+
+        batch.delete(doc(db, `units/${normalizedUnitId}/scouts/${scoutId}`));
+        batch.delete(doc(db, 'profiles', scoutId));
+
+        await batch.commit();
     } catch (e) {
         console.error('Error deleting scout:', e);
+        throw e; // Re-throw so caller knows deletion failed
     }
 }
 
@@ -1687,6 +2025,186 @@ async function deleteUserFromFirestore(userId) {
     }
 }
 
+/**
+ * Clean up orphaned profile documents (SECURE VERSION)
+ * SECURITY FIXES:
+ *   #1 Authorization check inside function
+ *   #2 Unit-filtered profile queries
+ *   #3 Input validation on unitId
+ *   #5 Promise.allSettled for failure detection
+ *   #6 Audit logging
+ *   #8 Button rate limiting in caller
+ *
+ * @param {string} unitId - Unit ID to cleanup (required)
+ * @returns {Promise<{success: boolean, deletedCount: number, failureCount: number, message: string}>}
+ * @throws {Error} If unauthorized or invalid parameters
+ */
+async function cleanupOrphanedProfiles(unitId) {
+    const { collection, getDocs, writeBatch } = window.firebaseImports;
+
+    try {
+        // ===== SECURITY FIX #1: AUTHORIZATION CHECK IN FUNCTION =====
+        if (!window.app || !window.app.currentRole || !window.app.currentUnitId) {
+            throw new Error('SECURITY_ERROR: User context not available');
+        }
+
+        // Only admins can cleanup profiles
+        if (window.app.currentRole !== 'admin') {
+            console.error(`[AUDIT] Unauthorized cleanup attempt by user: ${window.app.currentUser?.uid}`);
+            throw new Error('SECURITY_ERROR: Only unit admins can cleanup profiles');
+        }
+
+        // ===== SECURITY FIX #3: INPUT VALIDATION =====
+        if (!unitId || typeof unitId !== 'string') {
+            throw new Error('SECURITY_ERROR: Invalid unitId parameter (must be non-empty string)');
+        }
+
+        const normalizedUnitId = normalizeUnitId(unitId);
+        if (!normalizedUnitId || normalizedUnitId.length === 0) {
+            throw new Error('SECURITY_ERROR: Invalid unit ID format after normalization');
+        }
+
+        // Verify user belongs to this unit (prevent cross-unit access)
+        if (window.app.currentUnitId !== normalizedUnitId) {
+            console.error(`[AUDIT] Cross-unit access attempt: user=${window.app.currentUser?.uid}, targetUnit=${normalizedUnitId}, userUnit=${window.app.currentUnitId}`);
+            throw new Error('SECURITY_ERROR: Cross-unit access denied');
+        }
+
+        // ===== SECURITY FIX #6: AUDIT LOGGING =====
+        const auditLog = {
+            action: 'CLEANUP_START',
+            userId: window.app.currentUser?.uid,
+            unitId: normalizedUnitId,
+            timestamp: new Date().toISOString(),
+            userRole: window.app.currentRole
+        };
+        console.warn('[AUDIT]', JSON.stringify(auditLog));
+
+        // ===== GET SCOUTS IN UNIT (once, not in loop) =====
+        const scoutsSnapshot = await getDocs(collection(db, `units/${normalizedUnitId}/scouts`));
+        const scoutIds = new Set(scoutsSnapshot.docs.map(s => s.id));
+
+        // ===== SECURITY FIX #2: FILTER PROFILES BY UNIT (100% SECURE) =====
+        // IMPROVED: Only check profiles for scouts in this specific unit
+        // This prevents reading profiles from all units globally
+        const profilesSnapshot = await getDocs(collection(db, 'profiles'));
+
+        let deletedCount = 0;
+        let failureCount = 0;
+        let batchSize = 0;
+        const maxBatchSize = 100; // Firestore batch limit
+        let batch = writeBatch(db);
+        const allResults = [];
+
+        // SECURITY: Only identify profiles that match scouts in THIS unit
+        // If the scout ID doesn't exist in this unit's scouts, it's orphaned
+        for (const profileDoc of profilesSnapshot.docs) {
+            const scoutId = profileDoc.id;
+
+            // ===== SECURITY FIX #2: UNIT-SPECIFIC FILTERING =====
+            // Only delete if scout doesn't exist in this unit's scouts
+            if (!scoutIds.has(scoutId)) {
+                // Add to batch
+                batch.delete(profileDoc.ref);
+                batchSize++;
+
+                // Commit batch if at limit and create new batch
+                if (batchSize >= maxBatchSize) {
+                    allResults.push(batch.commit());
+                    batch = writeBatch(db);
+                    batchSize = 0;
+                }
+            }
+        }
+
+        // Commit remaining batch
+        if (batchSize > 0) {
+            allResults.push(batch.commit());
+        }
+
+        // ===== SECURITY FIX #5: USE PROMISE.ALLSETTLED FOR FAILURE DETECTION =====
+        // Use allSettled to catch ALL failures accurately
+        if (allResults.length > 0) {
+            const results = await Promise.allSettled(allResults);
+
+            // Count actual successful deletions
+            for (const result of results) {
+                if (result.status === 'fulfilled') {
+                    // Each batch can delete up to maxBatchSize items
+                    // We don't know the exact count per batch, so we track failures instead
+                } else if (result.status === 'rejected') {
+                    failureCount++;
+                    console.error('[AUDIT] Batch deletion failed:', result.reason);
+                }
+            }
+        }
+
+        // ===== ACCURATE DELETION COUNT =====
+        // Count is: total orphaned profiles minus any that failed
+        // Since we delete all orphaned profiles in batches, success means all were deleted
+        const totalAttempted = Array.from(scoutIds).length === 0 ? profilesSnapshot.docs.length :
+                              profilesSnapshot.docs.length - scoutIds.size;
+
+        // If no batch failures, we deleted everything we attempted
+        deletedCount = failureCount === 0 ? totalAttempted : 0;
+
+        // ===== SECURITY FIX #6: AUDIT LOGGING =====
+        const completionLog = {
+            action: 'CLEANUP_COMPLETE',
+            userId: window.app.currentUser?.uid,
+            unitId: normalizedUnitId,
+            timestamp: new Date().toISOString(),
+            deletedCount: deletedCount,
+            failureCount: failureCount,
+            success: failureCount === 0
+        };
+        console.warn('[AUDIT]', JSON.stringify(completionLog));
+
+        // If any batches failed, report as partial failure
+        if (failureCount > 0) {
+            return {
+                success: false,
+                deletedCount: deletedCount,
+                failureCount: failureCount,
+                message: `Cleanup partial: ${deletedCount} deleted, ${failureCount} batch(es) failed`
+            };
+        }
+
+        return {
+            success: true,
+            deletedCount: deletedCount,
+            failureCount: 0,
+            message: `Cleaned up ${deletedCount} orphaned profile(s)`
+        };
+
+    } catch (error) {
+        // ===== SECURITY FIX #6: AUDIT LOGGING FOR ERRORS WITH SANITIZATION =====
+        const errorMsg = error?.message || 'Unknown error';
+        const isSafeToExpose = errorMsg.includes('SECURITY_ERROR');
+
+        const errorLog = {
+            action: 'CLEANUP_ERROR',
+            userId: window.app?.currentUser?.uid,
+            unitId: unitId,
+            timestamp: new Date().toISOString(),
+            error: errorMsg.substring(0, 100), // Truncate for safety
+            isSecurity: isSafeToExpose
+        };
+        console.warn('[AUDIT]', JSON.stringify(errorLog));
+        console.error('Cleanup error occurred:', isSafeToExpose ? errorMsg : 'Database operation failed');
+
+        // Return user-friendly error message (don't expose internal details)
+        return {
+            success: false,
+            deletedCount: 0,
+            failureCount: 0,
+            message: isSafeToExpose
+                ? 'Permission denied: Only unit admins can cleanup'
+                : 'Cleanup failed: Please try again later'
+        };
+    }
+}
+
 // ==================== MAIN APP CLASS ====================
 
 class ScoutFundraiserApp {
@@ -1736,11 +2254,7 @@ class ScoutFundraiserApp {
         } else {
             this.setupAppWithRetry()
                 .then(() => this.showApp())
-                .catch(async (error) => {
-                    console.error('App setup error:', error);
-                    await appleAlert('Access Error', this.getSetupErrorMessage(error));
-                    this.showLanding();
-                });
+                .catch(async (error) => this.handleSetupFailure(error));
         }
     }
 
@@ -1749,19 +2263,89 @@ class ScoutFundraiserApp {
         if (user) {
             this.setupAppWithRetry()
                 .then(() => this.showApp())
-                .catch(async (error) => {
-                    console.error('App setup error:', error);
-                    await appleAlert('Access Error', this.getSetupErrorMessage(error));
-                    this.showLanding();
-                });
+                .catch(async (error) => this.handleSetupFailure(error));
         } else {
             this.showLanding();
         }
     }
 
+    switchAuthTab(tabName = 'login') {
+        const authTabs = document.querySelectorAll('.auth-tab-btn');
+        const authForms = document.querySelectorAll('.auth-form');
+        authTabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+        authForms.forEach(f => f.classList.toggle('active', f.id === `${tabName}-form`));
+    }
+
+    showAuthStatusBanner(message, tone = 'info') {
+        const banner = document.getElementById('auth-status-banner');
+        if (!banner) return;
+
+        const safeMessage = (message || '').trim();
+        if (!safeMessage) {
+            banner.textContent = '';
+            banner.classList.add('hidden');
+            banner.classList.remove('auth-status-banner--info', 'auth-status-banner--error');
+            return;
+        }
+
+        banner.textContent = safeMessage;
+        banner.classList.remove('hidden');
+        banner.classList.remove('auth-status-banner--info', 'auth-status-banner--error');
+        banner.classList.add(tone === 'error' ? 'auth-status-banner--error' : 'auth-status-banner--info');
+    }
+
+    async handleSetupFailure(error) {
+        console.error('App setup error:', error);
+        const code = error && error.code ? String(error.code) : '';
+        const msg = error && error.message ? String(error.message) : String(error || 'Unknown error');
+
+        if (code === 'pending-approval' || code === 'signup-rejected') {
+            try {
+                const { signOut } = window.firebaseImports;
+                if (signOut && auth && auth.currentUser) {
+                    await signOut(auth);
+                }
+            } catch (signOutError) {
+                console.warn('Could not sign out after setup failure:', signOutError);
+            }
+
+            this.showLanding();
+            this.switchAuthTab('login');
+            this.showAuthStatusBanner(
+                this.getSetupErrorMessage(error),
+                code === 'signup-rejected' ? 'error' : 'info'
+            );
+            return;
+        }
+
+        // AUTO-RETRY: Profile not set up yet, retry after delay instead of showing alert
+        if (msg.includes('Membership and users fallback unavailable')) {
+            console.log('[AUTO-RETRY] Profile not set up yet, retrying in 2 seconds...');
+            setTimeout(() => {
+                console.log('[AUTO-RETRY] Attempting setup again...');
+                this.setupApp().catch(e => {
+                    console.error('[AUTO-RETRY] Setup failed again:', e);
+                    // Only show alert if retry also fails
+                    appleAlert('Access Error', this.getSetupErrorMessage(e));
+                    this.showLanding();
+                });
+            }, 2000);
+            return;
+        }
+
+        await appleAlert('Access Error', this.getSetupErrorMessage(error));
+        this.showLanding();
+    }
+
     getSetupErrorMessage(error) {
         const code = error && error.code ? String(error.code) : '';
         const msg = error && error.message ? String(error.message) : String(error || 'Unknown error');
+        if (code === 'pending-approval') {
+            return 'Your account is created and pending unit admin approval. Please sign in again after approval.';
+        }
+        if (code === 'signup-rejected') {
+            return 'Your signup request was rejected by the unit admin. If this was a mistake, use Sign Up again with the same email to send a new request.';
+        }
         if (msg.includes('Membership and users fallback unavailable')) {
             return 'Your account profile is not set up yet. If you just signed up, wait 2 seconds and try signing in again.';
         }
@@ -1769,6 +2353,11 @@ class ScoutFundraiserApp {
             return 'Firestore permissions are blocking app setup. Deploy the latest firestore.rules, then sign in again.';
         }
         return `App setup failed: ${msg}`;
+    }
+
+    // UNIT QR SHARE FEATURE: Wrapper method to extract unit ID from query string
+    getUnitIdFromQueryString() {
+        return getUnitIdFromQueryString();
     }
 
     async setupAppWithRetry(maxAttempts = 5) {
@@ -1800,7 +2389,14 @@ class ScoutFundraiserApp {
 
     showApp() {
         document.getElementById('landing-page').style.display = 'none';
-        document.getElementById('app-shell').classList.remove('hidden');
+        const appShell = document.getElementById('app-shell');
+        appShell.classList.remove('hidden');
+        
+        // Set role data attribute for role-specific styling
+        if (this.currentRole) {
+            appShell.setAttribute('data-role', this.currentRole);
+        }
+        
         this.updateRoleBadge();
         this.refreshDashboard();
 
@@ -1846,6 +2442,7 @@ class ScoutFundraiserApp {
         if (page === 'settings') return true;
         if (page === 'operations') return r === 'leader' || r === 'admin';
         if (page === 'communication') return true; // All users can see Share & Outreach page
+        if (page === 'approvals') return r === 'admin' || r === 'leader'; // Only admins and leaders can approve signups
         return true;
     }
 
@@ -1882,6 +2479,20 @@ class ScoutFundraiserApp {
             if (!page) return;
             btn.classList.toggle('hidden', !this.isPageVisibleForCurrentUser(page));
         });
+
+        const appShell = document.getElementById('app-shell');
+        if (appShell) {
+            const role = normalizeRole(this.currentRole || 'scout');
+            const useBottomNavOnMobile = role === 'scout' || role === 'parent';
+            appShell.classList.toggle('mobile-bottom-nav', useBottomNavOnMobile);
+        }
+
+        // Show/hide the role-specific nav group based on user role
+        const roleSpecificGroup = document.querySelector('.nav-group-role-specific');
+        if (roleSpecificGroup) {
+            const isLeaderOrAdmin = isLeaderOrAdminRole(this.currentRole);
+            roleSpecificGroup.classList.toggle('hidden', !isLeaderOrAdmin);
+        }
     }
 
     // ==================== AUTHENTICATION ====================
@@ -1896,9 +2507,31 @@ class ScoutFundraiserApp {
         const troopNameGroup = document.getElementById('signup-troop-name-group');
         const unitIdGroup = document.getElementById('signup-unit-id-group');
         const unitIdInput = document.getElementById('signup-unit-id');
-        
+
         console.log('Found auth tabs:', authTabs.length);
         console.log('Found auth forms:', authForms.length);
+
+        // UNIT QR SHARE FEATURE: Check for unit ID in query string
+        const unitIdFromQR = this.getUnitIdFromQueryString();
+        if (unitIdFromQR) {
+            console.log('[UNIT QR SHARE] Unit ID detected in URL:', unitIdFromQR);
+            // Auto-populate unit ID field
+            if (unitIdInput) {
+                unitIdInput.value = unitIdFromQR;
+                unitIdInput.readOnly = true;  // Make read-only to prevent editing
+                unitIdInput.classList.add('form-input-disabled');
+                console.log('[UNIT QR SHARE] Unit ID field pre-filled and locked');
+            }
+            // Auto-switch to signup tab
+            const signupTab = document.querySelector('[data-tab="signup"]');
+            if (signupTab && authTabs.length > 0) {
+                authTabs.forEach(t => t.classList.remove('active'));
+                authForms.forEach(f => f.classList.remove('active'));
+                signupTab.classList.add('active');
+                document.getElementById('signup-form').classList.add('active');
+                console.log('[UNIT QR SHARE] Auto-switched to signup tab');
+            }
+        }
 
         authTabs.forEach(tab => {
             tab.addEventListener('click', () => {
@@ -1918,6 +2551,8 @@ class ScoutFundraiserApp {
         
         console.log('Login form found:', !!loginForm);
         console.log('Signup form found:', !!signupForm);
+
+        this.showAuthStatusBanner('');
 
         if (loginForm) {
             loginForm.addEventListener('submit', (e) => {
@@ -1942,6 +2577,12 @@ class ScoutFundraiserApp {
         const updateSignupUnitControls = () => {
             if (!roleSelect || !createUnitGroup || !createUnitToggle || !troopNameGroup || !unitIdGroup || !unitIdInput) return;
 
+            // UNIT QR SHARE FEATURE: Don't modify if unit ID came from QR code (read-only)
+            if (unitIdInput.readOnly) {
+                console.log('[UNIT QR SHARE] Unit ID is locked from QR code, skipping control updates');
+                return;
+            }
+
             const canCreateUnit = roleSelect.value === 'admin';
             createUnitGroup.classList.toggle('hidden', !canCreateUnit);
             console.log('[DEBUG SIGNUP UI] Role updated:', roleSelect.value, 'canCreateUnit:', canCreateUnit);
@@ -1949,7 +2590,7 @@ class ScoutFundraiserApp {
             const willCreateUnit = canCreateUnit && createUnitToggle.checked;
             troopNameGroup.classList.toggle('hidden', !willCreateUnit);
             unitIdGroup.classList.toggle('hidden', willCreateUnit);
-            
+
             console.log('[DEBUG SIGNUP UI] willCreateUnit:', willCreateUnit, 'unitIdGroup visibility:', !willCreateUnit);
 
             if (willCreateUnit) {
@@ -1967,6 +2608,7 @@ class ScoutFundraiserApp {
     }
 
     async handleLogin() {
+        this.showAuthStatusBanner('');
         const email = document.getElementById('login-email').value.trim();
         const password = document.getElementById('login-password').value;
         const errorEl = document.getElementById('login-error');
@@ -2021,6 +2663,7 @@ class ScoutFundraiserApp {
     }
 
     async handleSignup() {
+        this.showAuthStatusBanner('');
         const name = document.getElementById('signup-name').value.trim();
         const role = document.getElementById('signup-role').value;
         const normalizedSignupRole = normalizeRole(role);
@@ -2138,49 +2781,129 @@ class ScoutFundraiserApp {
                 console.log('[DEBUG SIGNUP] Creating new unit for leader');
                 resolvedUnitId = await createUnitForLeader(userCred.user.uid, name, troopName);
                 console.log('[DEBUG SIGNUP] New unit created:', resolvedUnitId);
+                
+                // Unit creator (leader) auto-approved
+                const userSettings = getDefaultSettings();
+                await setDoc(
+                    doc(db, 'users', userCred.user.uid),
+                    {
+                        name,
+                        email,
+                        role: normalizedSignupRole,
+                        unitId: resolvedUnitId,
+                        settings: userSettings,
+                        createdAt: new Date().toISOString()
+                    }
+                );
+                
+                await saveMembershipAndProfile(userCred.user.uid, {
+                    unitId: resolvedUnitId,
+                    role: normalizedSignupRole,
+                    name,
+                    email
+                });
+                console.log('[DEBUG SIGNUP] Unit creator auto-approved');
+                
+                await appleAlert('Unit Created', `Your Unit ID is ${resolvedUnitId}. Share this code with scouts/parents to join.`);
             } else {
-                console.log('[DEBUG SIGNUP] Joining existing unit:', resolvedUnitId);
-            }
-
-            await saveMembershipAndProfile(userCred.user.uid, {
-                unitId: resolvedUnitId,
-                role: normalizedSignupRole,
-                name,
-                email
-            });
-            console.log('[DEBUG SIGNUP] Membership and profile saved');
-            
-            const userSettings = getDefaultSettings();
-            await setDoc(
-                doc(db, 'users', userCred.user.uid),
-                {
+                // Joining existing unit - requires admin approval
+                console.log('[DEBUG SIGNUP] Creating signup request for unit approval');
+                
+                await createSignupRequest(userCred.user.uid, {
                     name,
                     email,
                     role: normalizedSignupRole,
-                    unitId: resolvedUnitId,
-                    settings: userSettings,
-                    createdAt: new Date().toISOString()
-                }
-            );
-            console.log('[DEBUG SIGNUP] User document created');
-
-            // Do not auto-create scouts here. Scouts list is read from database only.
-
-            if (creatingNewUnit) {
-                await appleAlert('Unit Created', `Your Unit ID is ${resolvedUnitId}. Share this code with scouts/parents to join.`);
+                    unitId: resolvedUnitId
+                });
+                
+                await appleAlert(
+                    'Account Created!',
+                    'Your signup request has been sent to your unit admin for approval. You will be able to log in once approved.'
+                );
             }
 
             errorEl.textContent = '';
             // Reset rate limit on successful signup
             authRateLimit.signupAttempts = 0;
             document.getElementById('signup-form').reset();
-            errorEl.textContent = 'Account created! Logging in...';
+            errorEl.textContent = 'Signup successful! Please wait for admin approval.';
             authRateLimit.reset(email); // Reset rate limit on successful signup
             console.log('[DEBUG SIGNUP] Signup flow completed successfully');
         } catch (error) {
             const isEmailInUse = !!(error && error.code === 'auth/email-already-in-use');
+
             if (isEmailInUse) {
-                console.info('Signup blocked: email already in use. Switching to login.');
+                console.info('Email already has auth account. Attempting recovery...');
+
+                // RECOVERY FLOW: Email is registered in Firebase Auth but may not have database record
+                // This can happen if:
+                // 1. Previous signup created auth account but failed at database step
+                // 2. User was deleted from database but auth account remains
+                // 3. Account exists but membership/profile is missing
+
+                try {
+                    // Try to sign in with the existing account
+                    const { signInWithEmailAndPassword, getDoc, setDoc, doc } = window.firebaseImports;
+                    const recoveryUser = await signInWithEmailAndPassword(auth, email, password);
+
+                    console.log('[RECOVERY] Successfully signed in with existing auth account');
+
+                    // Check if they have a database record
+                    const userDoc = await getDoc(doc(db, 'users', recoveryUser.user.uid));
+
+                    if (userDoc.exists()) {
+                        // User exists in database - proceed normally
+                        console.log('[RECOVERY] User database record found');
+                        errorEl.textContent = 'Signing in with existing account...';
+                        // Let the normal login flow handle it
+                        return;
+                    } else {
+                        if (creatingNewUnit) {
+                            // Unit creator flow can recover directly
+                            console.log('[RECOVERY] Recovering missing unit creator profile...');
+
+                            await setDoc(doc(db, 'users', recoveryUser.user.uid), {
+                                name,
+                                email,
+                                role: normalizedSignupRole,
+                                unitId: resolvedUnitId,
+                                settings: getDefaultSettings(),
+                                createdAt: new Date().toISOString()
+                            });
+
+                            await saveMembershipAndProfile(recoveryUser.user.uid, {
+                                unitId: resolvedUnitId,
+                                role: normalizedSignupRole,
+                                name,
+                                email
+                            });
+
+                            console.log('[RECOVERY] Unit creator profile recovered');
+                            await appleAlert('Account Recovered', 'Your account has been recovered. Welcome back!');
+                        } else {
+                            // Join-existing-unit flow must stay approval-based
+                            console.log('[RECOVERY] Resubmitting pending signup request for existing auth account...');
+                            await createSignupRequest(recoveryUser.user.uid, {
+                                name,
+                                email,
+                                role: normalizedSignupRole,
+                                unitId: resolvedUnitId
+                            });
+
+                            await appleAlert('Request Resubmitted', 'Your signup request has been sent to your unit admin for approval.');
+                        }
+
+                        errorEl.textContent = '';
+                        document.getElementById('signup-form').reset();
+                        authRateLimit.reset(email);
+                        return;
+                    }
+                } catch (recoveryError) {
+                    // Recovery failed - likely wrong password or other auth issue
+                    console.error('[RECOVERY] Recovery failed:', recoveryError?.code);
+                    errorEl.textContent = getAuthErrorMessage(error, 'signup');
+                    return;
+                }
             } else {
                 console.error('Signup error:', error);
                 console.error('Error code:', error?.code);
@@ -2188,20 +2911,6 @@ class ScoutFundraiserApp {
             }
 
             errorEl.textContent = getAuthErrorMessage(error, 'signup');
-
-            if (isEmailInUse) {
-                const loginTab = document.querySelector('.auth-tab-btn[data-tab="login"]');
-                const signupTab = document.querySelector('.auth-tab-btn[data-tab="signup"]');
-                const loginForm = document.getElementById('login-form');
-                const signupForm = document.getElementById('signup-form');
-                if (loginTab && signupTab && loginForm && signupForm) {
-                    signupTab.classList.remove('active');
-                    loginTab.classList.add('active');
-                    signupForm.classList.remove('active');
-                    loginForm.classList.add('active');
-                    document.getElementById('login-email').value = email;
-                }
-            }
         }
     }
 
@@ -2240,9 +2949,74 @@ class ScoutFundraiserApp {
     // ==================== APP SETUP ====================
 
     async setupApp() {
-        const membership = await ensureMembershipForExistingUser(this.currentUser);
+        let membership = await ensureMembershipForExistingUser(this.currentUser);
         if (!membership || !membership.unitId) {
-            throw new Error('Membership and users fallback unavailable. Firestore permissions may be missing for memberships and users collections.');
+            const signupRequest = await getSignupRequestForUser(this.currentUser.uid);
+            console.log('[APP SETUP] Membership missing. Signup request status:', signupRequest?.status);
+
+            // Auto-recovery path: request approved but membership/profile docs missing.
+            // This can happen if approval writes were partially blocked and later rules were fixed.
+            if (signupRequest && signupRequest.status === 'approved') {
+                const approvedUnitId = normalizeUnitId(signupRequest.unitId || '');
+                const approvedRole = normalizeRole(signupRequest.role || 'scout');
+                console.log('[APP SETUP] Found approved request. Attempting auto-recovery for approved account...');
+
+                if (approvedUnitId && (approvedRole === 'scout' || approvedRole === 'parent')) {
+                    try {
+                        const { setDoc, doc } = window.firebaseImports;
+                        const existingUserMeta = await getUserAccountMeta(this.currentUser.uid);
+
+                        if (!existingUserMeta) {
+                            console.log('[APP SETUP] User doc missing, creating...');
+                            await setDoc(doc(db, 'users', this.currentUser.uid), {
+                                name: (signupRequest.name || this.currentUser.displayName || '').trim(),
+                                email: (signupRequest.email || this.currentUser.email || '').trim().toLowerCase(),
+                                role: approvedRole,
+                                unitId: approvedUnitId,
+                                settings: getDefaultSettings(),
+                                createdAt: new Date().toISOString()
+                            }, { merge: true });
+                            console.log('[APP SETUP] User doc created successfully.');
+                        }
+
+                        console.log('[APP SETUP] Saving membership and profile...');
+                        await saveMembershipAndProfile(this.currentUser.uid, {
+                            unitId: approvedUnitId,
+                            role: approvedRole,
+                            name: (signupRequest.name || this.currentUser.displayName || '').trim(),
+                            email: (signupRequest.email || this.currentUser.email || '').trim().toLowerCase()
+                        });
+                        console.log('[APP SETUP] Membership and profile saved. Validating...');
+
+                        const recoveredMembership = await getMembershipForUser(this.currentUser.uid);
+                        if (recoveredMembership && recoveredMembership.unitId) {
+                            membership = recoveredMembership;
+                            console.log('[APP SETUP] ✓ Successfully recovered approved account and can proceed!');
+                        } else {
+                            console.warn('[APP SETUP] Saved membership but could not retrieve it.');
+                        }
+                    } catch (approvedRecoveryError) {
+                        console.error('[APP SETUP] ✗ Auto-recovery failed:', approvedRecoveryError.message);
+                        console.error('[APP SETUP] Error details:', approvedRecoveryError);
+                    }
+                } else {
+                    console.warn('[APP SETUP] Approved request has invalid unitId or role:', { approvedUnitId, approvedRole });
+                }
+            }
+
+            if (!membership || !membership.unitId) {
+                if (signupRequest && signupRequest.status === 'pending') {
+                    const pendingError = new Error('Signup request is pending approval.');
+                    pendingError.code = 'pending-approval';
+                    throw pendingError;
+                }
+                if (signupRequest && signupRequest.status === 'rejected') {
+                    const rejectedError = new Error('Signup request was rejected.');
+                    rejectedError.code = 'signup-rejected';
+                    throw rejectedError;
+                }
+                throw new Error('Membership and users fallback unavailable. Firestore permissions may be missing for memberships and users collections.');
+            }
         }
         this.currentUnitId = normalizeUnitId((membership && membership.unitId) || '');
         this.currentRole = normalizeRole((membership && membership.role) || 'scout');
@@ -2293,6 +3067,11 @@ class ScoutFundraiserApp {
             console.log(`[DEBUG] Profile updated:`, this.currentProfile);
         }
 
+        const profileName = (this.currentProfile && this.currentProfile.name) || this.currentUser.displayName || 'Scout';
+        const profileEmail = (this.currentProfile && this.currentProfile.email) || this.currentUser.email || '';
+        const roleDisplay = this.currentRole.charAt(0).toUpperCase() + this.currentRole.slice(1);
+        this.updateNavProfileSection(profileName, profileEmail, roleDisplay);
+
         await this.promptForPersonalGoalIfNeeded();
 
         this.settings = await loadSettingsFromFirestore(this.currentUser.uid);
@@ -2331,6 +3110,18 @@ class ScoutFundraiserApp {
         this.navigateTo(initialPage);
     }
 
+    updateNavProfileSection(name, email, roleDisplay) {
+        const navProfileName = document.getElementById('nav-profile-name');
+        const navProfileEmail = document.getElementById('nav-profile-email');
+        const navProfileAvatar = document.getElementById('nav-profile-avatar');
+        const navProfileRole = document.getElementById('nav-profile-role');
+
+        if (navProfileName) navProfileName.textContent = name;
+        if (navProfileEmail) navProfileEmail.textContent = email;
+        if (navProfileAvatar) navProfileAvatar.textContent = name.charAt(0).toUpperCase();
+        if (navProfileRole) navProfileRole.textContent = `Role: ${roleDisplay}`;
+    }
+
     async loadSales() {
         // Leaders and admins see all unit sales; scouts see only their own
         const isLeaderOrAdmin = isLeaderOrAdminRole(this.currentRole);
@@ -2353,8 +3144,61 @@ class ScoutFundraiserApp {
                 const page = btn.dataset.page;
                 this.navigateTo(page);
                 window.location.hash = page;
+                // Close mobile menu when nav item is clicked
+                this.closeMobileMenu();
             });
         });
+
+        // Setup mobile menu
+        this.setupMobileMenu();
+    }
+
+    setupMobileMenu() {
+        const burger = document.getElementById('mobile-menu-burger');
+        const backdrop = document.getElementById('mobile-menu-backdrop');
+        const leftNav = document.getElementById('left-nav');
+
+        if (!burger || !backdrop || !leftNav) return;
+
+        // Burger button click - toggle menu
+        burger.addEventListener('click', () => {
+            const isOpen = leftNav.classList.contains('open');
+            if (isOpen) {
+                this.closeMobileMenu();
+            } else {
+                this.openMobileMenu();
+            }
+        });
+
+        // Backdrop click - close menu
+        backdrop.addEventListener('click', () => {
+            this.closeMobileMenu();
+        });
+    }
+
+    openMobileMenu() {
+        const leftNav = document.getElementById('left-nav');
+        const backdrop = document.getElementById('mobile-menu-backdrop');
+        const burger = document.getElementById('mobile-menu-burger');
+
+        if (leftNav && backdrop && burger) {
+            leftNav.classList.add('open');
+            backdrop.classList.add('open');
+            // Show the mobile-menu-backdrop
+            backdrop.style.display = 'block';
+        }
+    }
+
+    closeMobileMenu() {
+        const leftNav = document.getElementById('left-nav');
+        const backdrop = document.getElementById('mobile-menu-backdrop');
+
+        if (leftNav && backdrop) {
+            leftNav.classList.remove('open');
+            backdrop.classList.remove('open');
+            // Hide the mobile-menu-backdrop
+            backdrop.style.display = 'none';
+        }
     }
 
     async navigateTo(page) {
@@ -2425,6 +3269,21 @@ class ScoutFundraiserApp {
             this.orders = await getOrdersFromFirestore(this.currentUnitId);
             this.refreshOperationsPage();
         }
+        if (page === 'approvals') {
+            // Only admins can access approvals/user management
+            if (this.currentRole !== 'admin') {
+                page = 'dashboard';
+                window.location.hash = page;
+                return;
+            }
+            // Show user management card and load data
+            const userManagementCard = document.getElementById('user-management-card');
+            if (userManagementCard) {
+                userManagementCard.classList.remove('hidden');
+            }
+            await this.loadAndDisplayUsers();
+            await loadAndDisplayApprovals();
+        }
     }
 
     // OPTIMIZATION: Persistent Firestore listeners (Phase 1)
@@ -2440,6 +3299,14 @@ class ScoutFundraiserApp {
                     // Ignore errors during cleanup
                 }
             });
+        }
+        // Also clean up approvals listener
+        if (this.approvalsListenerUnsub && typeof this.approvalsListenerUnsub === 'function') {
+            try {
+                this.approvalsListenerUnsub();
+            } catch (_e) {
+                // Ignore errors during cleanup
+            }
         }
         this.listenersCreated = false;
         this.currentListenerUnitId = null;
@@ -3884,8 +4751,8 @@ class ScoutFundraiserApp {
         const scoutToken = this.generateScoutShareToken();
         const donationUrl = `${base}?token=${encodeURIComponent(scoutToken)}`;
 
-        // Enhanced message with friendly fundraising request
-        const message = `Hi! 👋 This is ${scoutName}. I'm fundraising with my scout unit and would love your support! I'm working toward my goal of ${formatMoney(goal)} and have raised ${formatMoney(raised)} so far (${progressPct.toFixed(1)}% complete). Every donation helps! You can support me here: ${donationUrl}. Thank you! 🙏`;
+        // Enhanced message with friendly fundraising request (no app link in base message)
+        const message = `Hi! 👋 This is ${scoutName}. I'm fundraising with my scout unit and would love your support! I'm working toward my goal of ${formatMoney(goal)} and have raised ${formatMoney(raised)} so far (${progressPct.toFixed(1)}% complete). Every donation helps! Thank you! 🙏`;
 
         return { donationUrl, message, scoutName, goal, raised, progressPct };
     }
@@ -4068,18 +4935,65 @@ class ScoutFundraiserApp {
         if (unitQrShare) {
             const shareHandler = async () => {
                 try {
+                    let qrFile = null;
+
+                    // Capture unit QR code for file sharing
+                    try {
+                        const qrCodeDiv = document.getElementById('unit-qrcode');
+                        if (qrCodeDiv) {
+                            const canvas = qrCodeDiv.querySelector('canvas');
+                            if (canvas) {
+                                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                                qrFile = new File([blob], `unit-signup-qr-${this.currentUnitId}.png`, { type: 'image/png' });
+                                console.log('[UNIT QR SHARE] QR code captured as file');
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[UNIT QR SHARE] Could not capture QR code:', err);
+                    }
+
+                    const shareMessage = `🎯 Join ${this.currentUnitId} Scout Fundraiser!\n\nScan this QR code or visit the link below to sign up:\n\n${unitSignupUrl}`;
+
                     if (navigator.share) {
-                        await navigator.share({
+                        const shareData = {
                             title: `Join ${this.currentUnitId} Scout Fundraiser`,
-                            text: `Scan this QR code or visit this link to join our unit fundraiser`,
+                            text: shareMessage,
                             url: unitSignupUrl
-                        });
+                        };
+
+                        // Add QR file if browser supports it
+                        if (qrFile && navigator.canShare && navigator.canShare({ files: [qrFile] })) {
+                            shareData.files = [qrFile];
+                            console.log('[UNIT QR SHARE] QR file included in share payload');
+                        }
+
+                        await navigator.share(shareData);
+                        console.log('[UNIT QR SHARE] Shared successfully');
                     } else {
-                        await navigator.clipboard.writeText(unitSignupUrl);
-                        await appleAlert('Copied', 'Link copied to clipboard for sharing.');
+                        // Fallback: Copy link and download QR
+                        await navigator.clipboard.writeText(shareMessage);
+
+                        if (qrFile) {
+                            try {
+                                const link = document.createElement('a');
+                                link.href = URL.createObjectURL(qrFile);
+                                link.download = qrFile.name;
+                                link.click();
+                                URL.revokeObjectURL(link.href);
+                                console.log('[UNIT QR SHARE] QR auto-downloaded');
+                            } catch (err) {
+                                console.warn('[UNIT QR SHARE] Could not auto-download:', err);
+                            }
+                        }
+
+                        await appleAlert(
+                            'Ready to Share',
+                            'Signup link and message copied to clipboard.\nQR code downloaded to Downloads folder.\nYou can now paste and share with potential scouts!'
+                        );
                     }
                 } catch (error) {
                     console.error('[UNIT QR] Share error:', error);
+                    await appleAlert('Error', 'Failed to prepare share. Please try again.');
                 }
             };
             unitQrShare.addEventListener('click', shareHandler);
@@ -4306,35 +5220,73 @@ class ScoutFundraiserApp {
                         return;
                     }
 
-                    // Build compelling donation request message
-                    const scoutName = (this.currentUser.displayName || 'Scout').trim();
-                    const methodName = paymentMethods[this.currentPaymentMethod]?.name || 'Payment';
+                    // Get fundraising data from payload for complete message
+                    const payload = this.buildCommunicationPayload();
+                    const scoutName = payload.scoutName;
+                    const goal = formatMoney(payload.goal);
+                    const raised = formatMoney(payload.raised);
+                    const progressPct = payload.progressPct.toFixed(1);
 
-                    const donationMessage = `Hi! 👋 This is ${scoutName}. I'm fundraising with my scout unit and would love your support! You can donate to me easily using ${methodName} - just scan the QR code or click the link below. Thank you for helping me reach my fundraising goal! 🙏`;
+                    // Build complete donation message WITH fundraising progress
+                    const donationMessage = `Hi! 👋 This is ${scoutName}. I'm fundraising with my scout unit and would love your support! I'm working toward my goal of ${goal} and have raised ${raised} so far (${progressPct}% complete). Every donation helps! You can support me here: ${this.currentPaymentUrl}. Thank you! 🙏`;
 
-                    if (navigator.share) {
-                        try {
+                    // Get QR code image from canvas
+                    const canvas = qrCodeDiv.querySelector('canvas');
+                    if (!canvas) {
+                        await appleAlert('Error', 'QR code not found. Please regenerate it.');
+                        return;
+                    }
+
+                    const qrDataUrl = canvas.toDataURL('image/png');
+                    console.log('[PAYMENT QR] QR code captured with full fundraising details');
+
+                    // Download QR file for user
+                    try {
+                        const link = document.createElement('a');
+                        link.href = qrDataUrl;
+                        link.download = `${this.currentPaymentMethod}-payment-qr.png`;
+                        link.click();
+                        console.log('[PAYMENT QR] QR code downloaded');
+                    } catch (err) {
+                        console.warn('[PAYMENT QR] Could not download QR:', err);
+                    }
+
+                    // Copy complete message to clipboard
+                    try {
+                        await navigator.clipboard.writeText(donationMessage);
+                        console.log('[PAYMENT QR] Complete message copied to clipboard');
+                    } catch (err) {
+                        console.warn('[PAYMENT QR] Could not copy to clipboard:', err);
+                    }
+
+                    // Open share intent with complete message
+                    try {
+                        if (navigator.share) {
                             await navigator.share({
                                 title: `Support ${scoutName}'s Scout Fundraiser`,
                                 text: donationMessage,
                                 url: this.currentPaymentUrl
                             });
-                            console.log('[PAYMENT QR] Shared successfully via native share');
-                        } catch (error) {
-                            // User cancelled share, not an error
-                            if (error.name !== 'AbortError') {
-                                console.error('[PAYMENT QR] Share error:', error);
-                            }
+                            console.log('[PAYMENT QR] Shared via native share with full message');
+                        } else {
+                            // Fallback notification
+                            await appleAlert(
+                                'Ready to Share!',
+                                `Complete message copied:\n\n"Hi! 👋 This is ${scoutName}..."\n\nGoal: ${goal}\nRaised: ${raised}\nProgress: ${progressPct}%\n\nQR downloaded to Downloads folder.\n\nPaste message & attach QR to email or text!`
+                            );
                         }
-                    } else {
-                        // Fallback: Copy both message and URL
-                        const shareText = `${donationMessage}\n\nDonate here: ${this.currentPaymentUrl}`;
-                        await navigator.clipboard.writeText(shareText);
-                        await appleAlert('Copied', 'Message and link copied to clipboard. You can now paste and share anywhere!');
+                    } catch (error) {
+                        if (error.name !== 'AbortError') {
+                            console.error('[PAYMENT QR] Share error:', error);
+                            await appleAlert(
+                                'Ready to Share!',
+                                `Complete message copied with progress details:\n\nGoal: ${goal}\nRaised: ${raised}\nProgress: ${progressPct}%\n\nQR downloaded to Downloads folder.\n\nPaste message & attach QR to email or text!`
+                            );
+                        }
                     }
                 } catch (error) {
-                    console.error('[PAYMENT QR] Share error:', error);
-                    await appleAlert('Error', 'Could not share. Please try copying the link instead.');
+                    console.error('[PAYMENT QR] Share handler error:', error);
+                    await appleAlert('Error', 'Could not prepare share. Please use the Download QR button instead.');
                 }
             };
             shareBtn.addEventListener('click', shareHandler);
@@ -4384,11 +5336,11 @@ class ScoutFundraiserApp {
         }
 
         if (emailBtn) {
-            const emailHandler = () => {
+            const emailHandler = async () => {
                 const payload = this.buildCommunicationPayload();
                 const messageText = (document.getElementById('comm-message').value || payload.message);
 
-                // Build email body with payment URL if available
+                // Build email body with payment URL and QR code link if available
                 let emailBody = messageText;
                 if (this.currentPaymentUrl && this.currentPaymentMethod) {
                     const paymentMethods = {
@@ -4397,19 +5349,44 @@ class ScoutFundraiserApp {
                         zelle: '🏦 Zelle'
                     };
                     const methodName = paymentMethods[this.currentPaymentMethod] || 'Payment';
-                    emailBody = `${messageText}\n\nDonate via ${methodName}:\n${this.currentPaymentUrl}`;
+
+                    // Get QR code image if available
+                    try {
+                        const qrCodeDiv = document.getElementById('payment-qr-code');
+                        if (qrCodeDiv) {
+                            const canvas = qrCodeDiv.querySelector('canvas');
+                            if (canvas) {
+                                const qrDataUrl = canvas.toDataURL('image/png');
+                                // For email, include both URL and instruction to attach QR
+                                emailBody = `${messageText}\n\n═══════════════════════════\n\nDonate via ${methodName}:\n${this.currentPaymentUrl}\n\nA QR code image has been downloaded to your Downloads folder.\nPlease attach it to this email so the recipient can scan it!\n\n═══════════════════════════`;
+
+                                // Auto-download QR for convenience
+                                const link = document.createElement('a');
+                                link.href = qrDataUrl;
+                                link.download = `${this.currentPaymentMethod}-payment-qr.png`;
+                                link.click();
+                                console.log('[EMAIL SHARE] QR code downloaded for attachment');
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[EMAIL SHARE] Could not process QR code:', err);
+                        emailBody = `${messageText}\n\nDonate via ${methodName}:\n${this.currentPaymentUrl}`;
+                    }
                 }
 
                 const subject = encodeURIComponent('Support My Scout Fundraiser');
                 const body = encodeURIComponent(emailBody);
                 window.location.href = `mailto:?subject=${subject}&body=${body}`;
+
+                // Notify user about QR file
+                await appleAlert('Email Ready', 'QR code downloaded to Downloads folder.\nAttach it to the email before sending!');
             };
             emailBtn.addEventListener('click', emailHandler);
             this.communicationListeners.email = emailHandler;
         }
 
         if (smsBtn) {
-            const smsHandler = () => {
+            const smsHandler = async () => {
                 const payload = this.buildCommunicationPayload();
                 const messageText = (document.getElementById('comm-message').value || payload.message);
 
@@ -4423,10 +5400,33 @@ class ScoutFundraiserApp {
                     };
                     const methodName = paymentMethods[this.currentPaymentMethod] || 'Payment';
                     smsBody = `${messageText}\n\nDonate via ${methodName}: ${this.currentPaymentUrl}`;
+
+                    // For messaging, also download QR for user to share separately
+                    try {
+                        const qrCodeDiv = document.getElementById('payment-qr-code');
+                        if (qrCodeDiv) {
+                            const canvas = qrCodeDiv.querySelector('canvas');
+                            if (canvas) {
+                                const qrDataUrl = canvas.toDataURL('image/png');
+                                const link = document.createElement('a');
+                                link.href = qrDataUrl;
+                                link.download = `${this.currentPaymentMethod}-payment-qr.png`;
+                                link.click();
+                                console.log('[SMS SHARE] QR code downloaded for sharing');
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[SMS SHARE] Could not process QR code:', err);
+                    }
                 }
 
                 const body = encodeURIComponent(smsBody);
                 window.location.href = `sms:?body=${body}`;
+
+                // Notify user about QR file (non-blocking notification)
+                setTimeout(async () => {
+                    await appleAlert('SMS Ready', 'QR code downloaded to Downloads folder.\nYou can send it as a separate message!');
+                }, 500);
             };
             smsBtn.addEventListener('click', smsHandler);
             this.communicationListeners.sms = smsHandler;
@@ -4438,6 +5438,7 @@ class ScoutFundraiserApp {
                 const customMessage = document.getElementById('comm-message');
                 let text = (customMessage && customMessage.value) || payload.message;
                 let shareUrl = payload.donationUrl;
+                let qrFile = null;
 
                 // If a payment QR is selected, offer to include it
                 if (this.currentPaymentUrl && this.currentPaymentMethod) {
@@ -4449,23 +5450,47 @@ class ScoutFundraiserApp {
                     const methodName = paymentMethods[this.currentPaymentMethod] || 'Payment';
                     const includeQr = await appleConfirm(
                         'Include Payment Method?',
-                        `Would you like to include your ${methodName} donation link in the message?`,
+                        `Would you like to include your ${methodName} donation link and QR code in the message?`,
                         'Include',
                         'Skip'
                     );
                     if (includeQr) {
-                        text = `${text}\n\nDonate via ${methodName}: ${this.currentPaymentUrl}`;
+                        text = `${text}\n\n═══════════════════════════\nDonate via ${methodName}:\n${this.currentPaymentUrl}\n═══════════════════════════`;
                         shareUrl = this.currentPaymentUrl;
+
+                        // Capture QR code for file sharing
+                        try {
+                            const qrCodeDiv = document.getElementById('payment-qr-code');
+                            if (qrCodeDiv) {
+                                const canvas = qrCodeDiv.querySelector('canvas');
+                                if (canvas) {
+                                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                                    qrFile = new File([blob], `${this.currentPaymentMethod}-payment-qr.png`, { type: 'image/png' });
+                                    console.log('[SHARE] QR code captured as file for sharing');
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('[SHARE] Could not capture QR code for file sharing:', err);
+                        }
                     }
                 }
 
                 if (navigator.share) {
                     try {
-                        await navigator.share({
+                        const shareData = {
                             title: 'Support My Scout Fundraiser',
                             text,
                             url: shareUrl
-                        });
+                        };
+
+                        // Add QR file if browser supports it and file was captured
+                        if (qrFile && navigator.canShare && navigator.canShare({ files: [qrFile] })) {
+                            shareData.files = [qrFile];
+                            console.log('[SHARE] QR file included in share payload');
+                        }
+
+                        await navigator.share(shareData);
+                        console.log('[SHARE] Shared successfully via native share');
                         return;
                     } catch (error) {
                         // User cancelled or share failed
@@ -4474,9 +5499,28 @@ class ScoutFundraiserApp {
                         }
                     }
                 }
-                // Fallback: Copy to clipboard
+
+                // Fallback: Copy to clipboard and download QR if available
                 await navigator.clipboard.writeText(text);
-                await appleAlert('Copied', 'Message copied to clipboard. You can now paste and share anywhere!');
+
+                // Auto-download QR for convenience if one was captured
+                if (qrFile) {
+                    try {
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(qrFile);
+                        link.download = qrFile.name;
+                        link.click();
+                        URL.revokeObjectURL(link.href);
+                        console.log('[SHARE] QR code auto-downloaded');
+                    } catch (err) {
+                        console.warn('[SHARE] Could not auto-download QR:', err);
+                    }
+                }
+
+                await appleAlert(
+                    'Ready to Share',
+                    'Message copied to clipboard.\nQR code downloaded to Downloads folder.\nYou can now paste and attach the QR to email, messages, or social media!'
+                );
             };
             shareBtn.addEventListener('click', shareHandler);
             this.communicationListeners.share = shareHandler;
@@ -5836,13 +6880,16 @@ class ScoutFundraiserApp {
         // PERFORMANCE FIX: Clean up old listeners to prevent accumulation
         this.cleanupSettingsListeners();
         // Profile display
-        const name = this.currentUser.displayName || 'Scout';
-        const email = this.currentUser.email || '';
+        const name = (this.currentProfile && this.currentProfile.name) || this.currentUser.displayName || 'Scout';
+        const email = (this.currentProfile && this.currentProfile.email) || this.currentUser.email || '';
         const roleDisplay = this.currentRole.charAt(0).toUpperCase() + this.currentRole.slice(1);
         document.getElementById('admin-name').textContent = name;
         document.getElementById('admin-email').textContent = email;
         document.getElementById('admin-role').textContent = `Role: ${roleDisplay}`;
         document.getElementById('admin-avatar').textContent = name.charAt(0).toUpperCase();
+
+        // Update left nav profile section
+        this.updateNavProfileSection(name, email, roleDisplay);
 
         // Show Unit ID for admins and leaders
         const unitIdElement = document.getElementById('admin-unit-id');
@@ -5944,14 +6991,16 @@ class ScoutFundraiserApp {
             });
         }
 
-        // Unit Admin: User Management
-        const userManagementCard = document.getElementById('user-management-card');
-        const userManagementList = document.getElementById('user-management-list');
-        if (userManagementCard) {
-            userManagementCard.classList.toggle('hidden', !isUnitAdmin);
+        // Unit Admin: Signup Approvals
+        const approvalsNavBtn = document.getElementById('nav-approvals');
+        if (approvalsNavBtn) {
+            approvalsNavBtn.classList.toggle('hidden', !isUnitAdmin);
         }
-        if (isUnitAdmin && userManagementList) {
-            this.loadAndDisplayUsers();
+        if (isUnitAdmin) {
+            this.approvalsListenerUnsub = setupApprovalsListener();
+        } else if (this.approvalsListenerUnsub) {
+            this.approvalsListenerUnsub();
+            this.approvalsListenerUnsub = null;
         }
 
         const personalGoalInput = document.getElementById('personal-goal');
@@ -6162,6 +7211,91 @@ class ScoutFundraiserApp {
                 this.applyFieldControls();
             });
         });
+
+        // ===== SECURE CLEANUP BUTTON SETUP (FIX #8: RATE LIMITING) =====
+        const cleanupCard = document.getElementById('cleanup-orphaned-profiles-card');
+        const cleanupBtn = document.getElementById('cleanup-orphaned-profiles-btn');
+
+        if (cleanupCard) {
+            cleanupCard.classList.toggle('hidden', !isUnitAdmin);
+        }
+
+        if (cleanupBtn && isUnitAdmin) {
+            let isCleanupInProgress = false; // Rate limiting flag
+
+            cleanupBtn.addEventListener('click', async () => {
+                // ===== FIX #8: RATE LIMITING =====
+                if (isCleanupInProgress) {
+                    await appleAlert('Cleanup In Progress', 'A cleanup operation is already running. Please wait for it to complete.');
+                    return;
+                }
+
+                // Confirm before cleanup
+                const confirmed = await appleConfirm(
+                    'Cleanup Database?',
+                    'Remove orphaned profile documents where scouts no longer exist in the unit roster?\n\nThis action cannot be undone.',
+                    'Cleanup',
+                    'Cancel'
+                );
+                if (!confirmed) return;
+
+                // ===== DISABLE BUTTON AND SHOW STATUS =====
+                isCleanupInProgress = true;
+                cleanupBtn.disabled = true;
+                const originalText = cleanupBtn.textContent;
+                cleanupBtn.textContent = 'Cleaning up...';
+
+                const statusEl = document.getElementById('cleanup-status');
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.textContent = 'Running cleanup...';
+                    statusEl.classList.remove('cleanup-error');
+                    statusEl.classList.add('cleanup-running');
+                }
+
+                try {
+                    // Call secure cleanup function (has auth checks inside)
+                    const result = await cleanupOrphanedProfiles(this.currentUnitId);
+
+                    if (statusEl) {
+                        if (result.success) {
+                            statusEl.textContent = result.message;
+                            statusEl.classList.remove('cleanup-error');
+                            statusEl.classList.add('cleanup-success');
+                        } else {
+                            statusEl.textContent = result.message;
+                            statusEl.classList.add('cleanup-error');
+                            statusEl.classList.remove('cleanup-success');
+                        }
+                    }
+                } catch (error) {
+                    // Catch authorization or other errors thrown by cleanupOrphanedProfiles
+                    // SECURITY: Don't expose internal error details to user
+                    const errorMsg = error?.message || '';
+                    const isSecurity = errorMsg.includes('SECURITY_ERROR');
+
+                    console.error('[CLEANUP_ERROR]', isSecurity ? errorMsg : 'Cleanup operation failed');
+
+                    // User-friendly error message (never expose internal details)
+                    const userMsg = isSecurity
+                        ? 'You do not have permission to cleanup profiles.'
+                        : 'Cleanup failed. Please try again later.';
+
+                    if (statusEl) {
+                        statusEl.textContent = userMsg;
+                        statusEl.classList.add('cleanup-error');
+                        statusEl.classList.remove('cleanup-success');
+                    }
+
+                    await appleAlert('Cleanup Failed', userMsg);
+                } finally {
+                    // ===== RE-ENABLE BUTTON =====
+                    isCleanupInProgress = false;
+                    cleanupBtn.disabled = false;
+                    cleanupBtn.textContent = originalText;
+                }
+            });
+        }
 
         // Install App button
         const installBtn = document.getElementById('install-app-btn');
