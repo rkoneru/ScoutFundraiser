@@ -43,6 +43,14 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/users/$(uid));
     }
 
+    function signupRequest(uid) {
+      return get(/databases/$(database)/documents/signupRequests/$(uid));
+    }
+
+    function signupRequestExists(uid) {
+      return exists(/databases/$(database)/documents/signupRequests/$(uid));
+    }
+
     function hasMembershipUnit(unitId) {
       return membershipExists(request.auth.uid)
         && membership(request.auth.uid).data.unitId == unitId;
@@ -119,6 +127,13 @@ service cloud.firestore {
         && normalizeRole(userAccount(userId).data.role) == normalizeRole(role);
     }
 
+    function pendingSignupRequestMatches(userId, unitId, role) {
+      return signupRequestExists(userId)
+        && signupRequest(userId).data.status == 'pending'
+        && signupRequest(userId).data.unitId == unitId
+        && normalizeRole(signupRequest(userId).data.role) == normalizeRole(role);
+    }
+
     // Public unit lookup for pre-auth signup validation (stores minimal safe fields only).
     // Safe to be permissive: only public info, reads are open to all, deletes are blocked
     match /unitsPublic/{unitId} {
@@ -147,14 +162,22 @@ service cloud.firestore {
       // Users can create their own account doc at signup.
       // Critical: role + unitId become immutable client-side to prevent privilege escalation.
       allow create: if isSignedIn()
-        && request.auth.uid == userId
         && isKnownUnit(request.resource.data.unitId)
         && isValidNormalizedRole(request.resource.data.role)
         && (
-          // Only the unit creator may self-assign privileged roles.
-          (normalizeRole(request.resource.data.role) == 'admin' || normalizeRole(request.resource.data.role) == 'leader')
-            ? isUnitCreator(request.resource.data.unitId)
-            : true
+          (
+            request.auth.uid == userId
+            && (
+              // Only the unit creator may self-assign privileged roles.
+              (normalizeRole(request.resource.data.role) == 'admin' || normalizeRole(request.resource.data.role) == 'leader')
+                ? isUnitCreator(request.resource.data.unitId)
+                : true
+            )
+          )
+          || (
+            isUnitAdmin(request.resource.data.unitId)
+            && pendingSignupRequestMatches(userId, request.resource.data.unitId, request.resource.data.role)
+          )
         );
 
       // Updates allowed, but role/unitId must not change.
@@ -195,15 +218,23 @@ service cloud.firestore {
         
       // Membership creation is allowed for the signed-in user, but privileged roles are restricted.
       allow create: if isSignedIn()
-        && request.auth.uid == userId
         && request.resource.data.userId == userId
         && isKnownUnit(request.resource.data.unitId)
         && isValidNormalizedRole(request.resource.data.role)
         && (
-          // Only unit creator can create leader/admin memberships.
-          (normalizeRole(request.resource.data.role) == 'admin' || normalizeRole(request.resource.data.role) == 'leader')
-            ? (isUnitCreator(request.resource.data.unitId) || matchesTrustedUserDoc(userId, request.resource.data.unitId, request.resource.data.role))
-            : true
+          (
+            request.auth.uid == userId
+            && (
+              // Only unit creator can create leader/admin memberships.
+              (normalizeRole(request.resource.data.role) == 'admin' || normalizeRole(request.resource.data.role) == 'leader')
+                ? (isUnitCreator(request.resource.data.unitId) || matchesTrustedUserDoc(userId, request.resource.data.unitId, request.resource.data.role))
+                : true
+            )
+          )
+          || (
+            isUnitAdmin(request.resource.data.unitId)
+            && pendingSignupRequestMatches(userId, request.resource.data.unitId, request.resource.data.role)
+          )
         );
 
       // Users may not change their own role/unit; unit admins may update roles within the unit.
@@ -226,7 +257,65 @@ service cloud.firestore {
     }
 
     match /profiles/{userId} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      // SECURITY FIX #4: Allow self read/write, plus admin cleanup
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && (
+        request.auth.uid == userId
+        || (
+          request.resource.data.userId == userId
+          && request.resource.data.unitId is string
+          && isUnitAdmin(request.resource.data.unitId)
+          && (
+            (membershipExists(userId) && membership(userId).data.unitId == request.resource.data.unitId)
+            || pendingSignupRequestMatches(userId, request.resource.data.unitId, request.resource.data.role)
+          )
+        )
+      );
+
+      // SECURITY FIX #4: Allow unit admins to delete orphaned profiles during cleanup
+      // Cleanup function has auth checks, so we allow the Firestore-level delete
+      allow delete: if isSignedIn() && userAccountExists(request.auth.uid)
+        && isUnitAdmin(userAccount(request.auth.uid).data.unitId);
+    }
+
+    match /signupRequests/{requestId} {
+      // Users can create their own signup requests
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && (isKnownUnit(request.resource.data.unitId) || exists(/databases/$(database)/documents/units/$(request.resource.data.unitId)));
+      
+      // Users can read their own signup request (using document path, not data)
+      // Admins can read all requests for their unit
+      allow read: if isSignedIn()
+        && (
+          request.auth.uid == requestId
+          || (userAccountExists(request.auth.uid) && isUnitAdmin(resource.data.unitId))
+        );
+      
+      // Admins can approve/reject (update status, add approvedBy/rejectedBy)
+      allow update: if isSignedIn()
+        && (
+          (
+            userAccountExists(request.auth.uid)
+            && isUnitAdmin(resource.data.unitId)
+            && (request.resource.data.status == 'approved' || request.resource.data.status == 'rejected')
+          )
+          || (
+            // Allow requester to resubmit only rejected requests back to pending
+            request.auth.uid == requestId
+            && resource.data.status == 'rejected'
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.status == 'pending'
+            && isValidNormalizedRole(request.resource.data.role)
+            && (isKnownUnit(request.resource.data.unitId) || exists(/databases/$(database)/documents/units/$(request.resource.data.unitId)))
+          )
+        );
+      
+      // Admins can delete rejected/handled requests
+      allow delete: if isSignedIn()
+        && userAccountExists(request.auth.uid)
+        && isUnitAdmin(resource.data.unitId);
     }
 
     match /units/{unitId} {

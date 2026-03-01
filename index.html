@@ -8,10 +8,11 @@
     <!-- SECURITY FIX: Content Security Policy to prevent XSS attacks -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/firebasejs/ https://cdn.jsdelivr.net https://apis.google.com https://cdnjs.cloudflare.com;
+        script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/firebasejs/ https://cdn.jsdelivr.net https://apis.google.com https://cdnjs.cloudflare.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://www.recaptcha.net/recaptcha/;
         style-src 'self' 'unsafe-inline';
         img-src 'self' data: https:;
-        connect-src 'self' https://*.firebaseio.com https://*.firebase.googleapis.com https://*.googleapis.com https://www.gstatic.com https://cdn.jsdelivr.net;
+        connect-src 'self' https://*.firebaseio.com https://*.firebase.googleapis.com https://*.googleapis.com https://www.gstatic.com https://cdn.jsdelivr.net https://www.google.com/recaptcha/ https://www.recaptcha.net/recaptcha/;
+        frame-src https://www.google.com/recaptcha/ https://www.recaptcha.net/recaptcha/;
     ">
     <!-- SECURITY FIX: Prevent clickjacking -->
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
@@ -150,6 +151,8 @@
                 <button type="button" class="auth-tab-btn" data-tab="signup" aria-label="Switch to Sign Up tab">Sign Up</button>
             </div>
 
+            <p id="auth-status-banner" class="auth-status-banner hidden" aria-live="polite"></p>
+
             <!-- Login Form -->
             <form id="login-form" class="auth-form active">
                 <p class="landing-login-note">Enter your email and password</p>
@@ -225,45 +228,83 @@
                 </div>
             </div>
         </div>
+        <footer class="landing-footer">
+            <p>&copy; 2026 C Konpal. All rights reserved.</p>
+        </footer>
     </section>
 
     <div id="app-shell" class="app-container hidden">
+        <!-- Mobile Menu Burger Button -->
+        <button class="mobile-menu-burger" id="mobile-menu-burger" aria-label="Open navigation menu">
+            <svg class="icon" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+            </svg>
+        </button>
+
+        <!-- Mobile Menu Backdrop -->
+        <div class="mobile-menu-backdrop" id="mobile-menu-backdrop"></div>
+
         <!-- Header -->
         <header class="app-header">
-            <h1><svg class="icon icon-header"><use href="#icon-dollar"/></svg> <span>Troop 242 </span>Scout Fundraiser</h1>
+            <h1><span class="header-dollar">$</span> <span>Troop 242 </span>Scout Fundraiser</h1>
             <p class="subtitle">Sell, Track, Lead <span id="header-role-badge" class="role-badge hidden" aria-live="polite"></span></p>
         </header>
 
-        <!-- Navigation -->
-        <nav class="bottom-nav">
-            <button class="nav-btn active" data-page="quicklog" aria-label="Go to Quick Log page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-zap"/></svg></span>
-                <span>Quick Log</span>
-            </button>
-            <button class="nav-btn" data-page="dashboard" aria-label="Go to Dashboard page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-chart"/></svg></span>
-                <span>Dashboard</span>
-            </button>
-            <button class=" hidden" data-page="sales" aria-label="Go to Sales page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
-                <span>Sales</span>
-            </button>
-            <button class="nav-btn" data-page="scouts" aria-label="Go to Roster page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
-                <span>Roster</span>
-            </button>
-            <button class="nav-btn" data-page="communication" aria-label="Go to Communication page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-qr"/></svg></span>
-                <span>Share</span>
-            </button>
-            <button class="nav-btn" data-page="operations" aria-label="Go to Operations page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
-                <span>Ops</span>
-            </button>
-            <button class="nav-btn" data-page="settings" aria-label="Go to Settings page">
-                <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-settings"/></svg></span>
-                <span>Settings</span>
-            </button>
+        <!-- Left Sidebar Navigation -->
+        <nav class="left-nav" id="left-nav">
+            <!-- Common Tabs (All Users) -->
+            <div class="nav-group nav-group-common">
+                <div class="nav-group-label">Main</div>
+                <button class="nav-btn active" data-page="quicklog" aria-label="Go to Quick Log page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-zap"/></svg></span>
+                    <span>Quick Log</span>
+                </button>
+                <button class="nav-btn" data-page="dashboard" aria-label="Go to Dashboard page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-chart"/></svg></span>
+                    <span>Dashboard</span>
+                </button>
+            </div>
+
+            <!-- Role-Specific Tabs (Leaders & Admins) -->
+            <div class="nav-group nav-group-role-specific">
+                <div class="nav-group-label">Management</div>
+                <button class="nav-btn" data-page="scouts" aria-label="Go to Roster page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
+                    <span>Roster</span>
+                </button>
+                <button class="nav-btn" data-page="communication" aria-label="Go to Communication page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-qr"/></svg></span>
+                    <span>Share</span>
+                </button>
+                <button class="nav-btn hidden" id="nav-approvals" data-page="approvals" aria-label="Go to User Management page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
+                    <span>User Management</span>
+                </button>
+                <button class="nav-btn" data-page="operations" aria-label="Go to Operations page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
+                    <span>Ops</span>
+                </button>
+            </div>
+
+            <!-- User Profile Section (Bottom of Nav) -->
+            <div class="nav-profile">
+                <div class="nav-profile-info">
+                    <div class="nav-profile-avatar" id="nav-profile-avatar">A</div>
+                    <div class="nav-profile-details">
+                        <div class="nav-profile-name" id="nav-profile-name">User Name</div>
+                        <div class="nav-profile-email" id="nav-profile-email">email@example.com</div>
+                        <div class="nav-profile-role" id="nav-profile-role">Role: Scout</div>
+                    </div>
+                </div>
+                <button class="nav-btn nav-logout-btn logout-btn" id="nav-logout-btn" aria-label="Log Out">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-logout"/></svg></span>
+                    <span>Log Out</span>
+                </button>
+                <button class="nav-btn nav-settings-btn" data-page="settings" aria-label="Go to Settings page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-settings"/></svg></span>
+                    <span>Settings</span>
+                </button>
+            </div>
         </nav>
 
         <!-- Main Content Area -->
@@ -908,12 +949,11 @@
                     <div id="page-visibility-controls"></div>
                 </div>
 
-                <div class="card hidden" id="user-management-card">
-                    <h3>User Management (Admin)</h3>
-                    <p class="step-note">View and manage all users in your unit. You cannot delete yourself.</p>
-                    <div id="user-management-list">
-                        <p class="loading-text">Loading users...</p>
-                    </div>
+                <div class="card hidden" id="cleanup-orphaned-profiles-card">
+                    <h3>Database Cleanup (Admin)</h3>
+                    <p class="step-note">Remove orphaned profile documents where scouts no longer exist in the unit roster.</p>
+                    <button type="button" class="btn btn-secondary" id="cleanup-orphaned-profiles-btn" aria-label="Cleanup orphaned profiles">Cleanup Orphaned Profiles</button>
+                    <p id="cleanup-status" class="step-note" style="margin-top: 1rem; display: none;"></p>
                 </div>
 
                 <div class="card">
@@ -1073,7 +1113,41 @@
                 </div>
             </section>
 
+            <!-- USER MANAGEMENT PAGE (Admin Only) -->
+            <section id="approvals-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-users"/></svg> User Management</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card hidden" id="user-management-card">
+                    <h3>User Management (Admin)</h3>
+                    <p class="step-note">View and manage all users in your unit. You cannot delete yourself.</p>
+                    <div id="user-management-list">
+                        <p class="loading-text">Loading users...</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Pending Approvals</h3>
+                    <p class="step-note">Review and approve new scouts, parents, and leaders joining your unit.</p>
+                    <div id="approvals-list" class="approvals-list">
+                        <p class="loading-text">Loading approval requests...</p>
+                    </div>
+                </div>
+
+                <div class="card hidden" id="no-approvals-card">
+                    <h3>All Caught Up!</h3>
+                    <p>No pending approval requests at this time.</p>
+                </div>
+            </section>
+
         </main>
+
+        <!-- App Footer -->
+        <footer class="app-footer">
+            <p>&copy; 2026 C Konpal. All rights reserved.</p>
+        </footer>
     </div>
 
     <!-- Scout Detail Modal -->
