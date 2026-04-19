@@ -148,3 +148,83 @@ class FirebaseDashboardService {
         return await this.store.getTroopStats();
     }
 }
+
+// ==================== FIREBASE RECEIPT SERVICE ====================
+class FirebaseReceiptService {
+    constructor(userId, store) {
+        this.userId = userId;
+        this.store = store;
+    }
+
+    generateReceiptNumber() {
+        return `RCP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    }
+
+    async generateScoutReceipt(receiptData) {
+        const receipt = {
+            receiptNumber: this.generateReceiptNumber(),
+            type: 'scout',
+            userId: this.userId,
+            scoutName: receiptData.scoutName,
+            scoutId: receiptData.scoutId,
+            troopInfo: receiptData.troopInfo || {},
+            date: receiptData.date || new Date().toISOString(),
+            sales: receiptData.sales || [],
+            totalAmount: receiptData.totalAmount || 0,
+            totalCards: receiptData.totalCards || 0,
+            totalDonations: receiptData.totalDonations || 0,
+            additionalInfo: receiptData.additionalInfo || {},
+            createdAt: new Date().toISOString(),
+            sharedWith: []
+        };
+        return await this.store.saveReceipt(receipt);
+    }
+
+    async generateTroopReceipt(receiptData) {
+        const receipt = {
+            receiptNumber: this.generateReceiptNumber(),
+            type: 'troop',
+            troopInfo: receiptData.troopInfo || {},
+            scouts: receiptData.scouts || [],
+            date: receiptData.date || new Date().toISOString(),
+            totalAmount: receiptData.totalAmount || 0,
+            totalCards: receiptData.totalCards || 0,
+            totalDonations: receiptData.totalDonations || 0,
+            scoutBreakdown: receiptData.scoutBreakdown || [],
+            additionalInfo: receiptData.additionalInfo || {},
+            createdAt: new Date().toISOString(),
+            createdBy: this.userId
+        };
+        return await this.store.saveTroopReceipt(receipt);
+    }
+
+    async getReceiptById(receiptId) {
+        return await this.store.getReceipt(receiptId);
+    }
+
+    async getUserReceipts() {
+        return await this.store.getUserReceipts(this.userId);
+    }
+
+    async getTroopReceipts() {
+        return await this.store.getTroopReceipts();
+    }
+
+    async shareReceipt(receiptId, method, email = null) {
+        const receipt = await this.getReceiptById(receiptId);
+        if (!receipt) throw new Error('Receipt not found');
+
+        const shareRecord = {
+            method,
+            sharedAt: new Date().toISOString(),
+            email: email || null
+        };
+
+        await this.store.addReceiptShare(receiptId, shareRecord);
+        return shareRecord;
+    }
+
+    async deleteReceipt(receiptId) {
+        return await this.store.deleteReceipt(receiptId);
+    }
+}

@@ -27,115 +27,235 @@
 <body>
     <!-- SVG Icon Sprite (hidden) -->
     <svg xmlns="http://www.w3.org/2000/svg" class="svg-hidden">
-        <!-- Lightning Bolt - Electric Blue -->
-        <symbol id="icon-zap" viewBox="0 0 24 24">
-            <path fill="#0A84FF" d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+        <defs>
+            <radialGradient id="icon-grad-zap" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#6DC5FF"/>
+                <stop offset="48%" stop-color="#5397FF"/>
+                <stop offset="100%" stop-color="#3561AD"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-chart" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#FFDA5B"/>
+                <stop offset="48%" stop-color="#FFA745"/>
+                <stop offset="100%" stop-color="#A66B2C"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-dollar" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#5FFD7F"/>
+                <stop offset="48%" stop-color="#49C361"/>
+                <stop offset="100%" stop-color="#2E7D3E"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-receipt" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#C188FF"/>
+                <stop offset="48%" stop-color="#9468FF"/>
+                <stop offset="100%" stop-color="#5F43A5"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-users" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#2EFDFF"/>
+                <stop offset="48%" stop-color="#24C3DB"/>
+                <stop offset="100%" stop-color="#177D8C"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-settings" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#9DB4D5"/>
+                <stop offset="48%" stop-color="#788AA4"/>
+                <stop offset="100%" stop-color="#4D5969"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-card" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#A9FFEA"/>
+                <stop offset="48%" stop-color="#82F0B4"/>
+                <stop offset="100%" stop-color="#539A73"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-heart" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#FFCDF2"/>
+                <stop offset="48%" stop-color="#FF9DBA"/>
+                <stop offset="100%" stop-color="#AD6577"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-links" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#BDF2FF"/>
+                <stop offset="48%" stop-color="#91BAFF"/>
+                <stop offset="100%" stop-color="#5D77AD"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-qr" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#D5C9FF"/>
+                <stop offset="48%" stop-color="#A49AFF"/>
+                <stop offset="100%" stop-color="#6963AD"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-check" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#49FFBD"/>
+                <stop offset="48%" stop-color="#38CA91"/>
+                <stop offset="100%" stop-color="#24815D"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-trash" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#FFA85B"/>
+                <stop offset="48%" stop-color="#FF8145"/>
+                <stop offset="100%" stop-color="#A5522C"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-plus" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#45E9FF"/>
+                <stop offset="48%" stop-color="#35B3DD"/>
+                <stop offset="100%" stop-color="#22728E"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-trophy" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#FFE93F"/>
+                <stop offset="48%" stop-color="#F5B330"/>
+                <stop offset="100%" stop-color="#9D721F"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-refresh" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#51E7FF"/>
+                <stop offset="48%" stop-color="#3EB2F5"/>
+                <stop offset="100%" stop-color="#28729D"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-download" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#76ADFF"/>
+                <stop offset="48%" stop-color="#5B85FF"/>
+                <stop offset="100%" stop-color="#3A55A4"/>
+            </radialGradient>
+            <radialGradient id="icon-grad-logout" cx="32%" cy="26%" r="78%" fx="24%" fy="18%">
+                <stop offset="0%" stop-color="#FF8071"/>
+                <stop offset="48%" stop-color="#F06256"/>
+                <stop offset="100%" stop-color="#9A3F37"/>
+            </radialGradient>
+        </defs>
+
+        <symbol id="icon-zap" viewBox="0 0 64 64">
+            <path d="M29 8 18 27h10l-4 19 16-24H31l4-14z" fill="url(#icon-grad-zap)" stroke="#3F72CC" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M30 11 25 18h5" stroke="rgba(255,255,255,0.82)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </symbol>
-        
-        <!-- Chart - Orange -->
-        <symbol id="icon-chart" viewBox="0 0 24 24">
-            <rect fill="#FF9F0A" x="5" y="16" width="3" height="6" rx="1"/>
-            <rect fill="#FF9F0A" x="10.5" y="8" width="3" height="14" rx="1"/>
-            <rect fill="#FF9F0A" x="16" y="2" width="3" height="20" rx="1"/>
+
+        <symbol id="icon-chart" viewBox="0 0 64 64">
+            <rect x="10" y="30" width="10" height="18" rx="3" fill="url(#icon-grad-chart)" stroke="#C47E34" stroke-width="1"/>
+            <rect x="25" y="22" width="10" height="26" rx="3" fill="url(#icon-grad-chart)" stroke="#C47E34" stroke-width="1"/>
+            <rect x="40" y="14" width="10" height="34" rx="3" fill="url(#icon-grad-chart)" stroke="#C47E34" stroke-width="1"/>
+            <path d="M10 50H52" stroke="rgba(255,255,255,0.45)" stroke-width="1.1" stroke-linecap="round"/>
+            <path d="M12 32h5" stroke="rgba(255,255,255,0.82)" stroke-width="1.4" stroke-linecap="round"/>
+            <path d="M27 24h5" stroke="rgba(255,255,255,0.82)" stroke-width="1.4" stroke-linecap="round"/>
+            <path d="M42 16h5" stroke="rgba(255,255,255,0.82)" stroke-width="1.4" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- Receipt - Purple -->
-        <symbol id="icon-receipt" viewBox="0 0 24 24">
-            <path fill="#BF5AF2" d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
-            <path fill="#fff" opacity="0.9" d="M8 8h8v1.5H8zM8 12h8v1.5H8zM8 16h5v1.5H8z"/>
+
+        <symbol id="icon-dollar" viewBox="0 0 64 64">
+            <ellipse cx="30" cy="38" rx="15" ry="6" fill="url(#icon-grad-dollar)" stroke="#379349" stroke-width="1"/>
+            <ellipse cx="30" cy="29" rx="15" ry="6" fill="url(#icon-grad-dollar)" stroke="#379349" stroke-width="1"/>
+            <ellipse cx="30" cy="20" rx="15" ry="6" fill="url(#icon-grad-dollar)" stroke="#379349" stroke-width="1"/>
+            <path d="M30 14v5M27 17.5c1.5-1.5 6-1.8 7.8-.2 1.3 1.1.2 2.4-3 3.2-3.6.8-5 1.9-3.6 3.8 1.2 1.8 5.6 2.2 7.8.4" stroke="#fff" stroke-width="1.4" stroke-linecap="round" fill="none" opacity="0.78"/>
+            <path d="M16 18c3.8-1.8 10-2.6 16.3-2.1" stroke="rgba(255,255,255,0.82)" stroke-width="1.5" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- Users - Teal -->
-        <symbol id="icon-users" viewBox="0 0 24 24">
-            <circle fill="#64D2FF" cx="9" cy="7" r="4"/>
-            <path fill="#64D2FF" d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2H2z"/>
-            <circle fill="#64D2FF" opacity="0.7" cx="17" cy="7" r="3"/>
-            <path fill="#64D2FF" opacity="0.7" d="M22 21v-1.5a3.5 3.5 0 0 0-3-3.45"/>
+
+        <symbol id="icon-receipt" viewBox="0 0 64 64">
+            <path d="M16 10h26l4 4v32l-4-2.5-4 2.5-4-2.5-4 2.5-4-2.5-4 2.5-4-2.5-2 2.5V10z" fill="url(#icon-grad-receipt)" stroke="#704FC3" stroke-width="1"/>
+            <path d="M21 18h16M21 25h19M21 32h13" stroke="rgba(255,255,255,0.82)" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="40" cy="19" r="1.8" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Settings - Gray -->
-        <symbol id="icon-settings" viewBox="0 0 24 24">
-            <circle fill="#8E8E93" cx="12" cy="12" r="3"/>
-            <path fill="#8E8E93" d="M12 1l2 3h3l1 3 3 1v3l-3 2v3l-3 1h-3l-2 3-2-3H5l-1-3-3-1v-3l3-2V5l3-1h3l2-3z" opacity="0.6"/>
+
+        <symbol id="icon-users" viewBox="0 0 64 64">
+            <circle cx="21" cy="20" r="8" fill="url(#icon-grad-users)" stroke="#1B93A5" stroke-width="1"/>
+            <circle cx="39" cy="22" r="6.5" fill="url(#icon-grad-users)" stroke="#1B93A5" stroke-width="1"/>
+            <path d="M10 45c2.5-6.5 8-10 14.5-10s12 3.5 14.5 10" fill="url(#icon-grad-users)" stroke="#1B93A5" stroke-width="1"/>
+            <path d="M30 44c1-5 4.6-7.8 10-7.8 5.2 0 8.3 2.6 9.8 7.8" fill="url(#icon-grad-users)" stroke="#1B93A5" stroke-width="1"/>
+            <circle cx="17" cy="16" r="2.2" fill="rgba(255,255,255,0.82)"/>
+            <circle cx="35" cy="18" r="1.8" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Card - Green -->
-        <symbol id="icon-card" viewBox="0 0 24 24">
-            <rect fill="#32D74B" x="2" y="5" width="20" height="14" rx="2"/>
-            <rect fill="#fff" opacity="0.3" x="2" y="9" width="20" height="3"/>
-            <rect fill="#fff" opacity="0.9" x="4" y="14" width="4" height="2" rx="0.5"/>
+
+        <symbol id="icon-settings" viewBox="0 0 64 64">
+            <circle cx="30" cy="30" r="14" fill="url(#icon-grad-settings)" stroke="#5B687C" stroke-width="1"/>
+            <circle cx="30" cy="30" r="5.5" fill="#fff" opacity="0.18" stroke="#5B687C" stroke-width="1.4"/>
+            <path d="M30 16v4M30 40v4M16 30h4M40 30h4M20.7 20.7l2.8 2.8M36.5 36.5l2.8 2.8M39.3 20.7l-2.8 2.8M23.5 36.5l-2.8 2.8" stroke="#5B687C" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="22" cy="22" r="2.8" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Heart - Pink/Red -->
-        <symbol id="icon-heart" viewBox="0 0 24 24">
-            <path fill="#FF375F" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+
+        <symbol id="icon-card" viewBox="0 0 64 64">
+            <rect x="10" y="16" width="38" height="24" rx="8" fill="url(#icon-grad-card)" stroke="#62B588" stroke-width="1"/>
+            <rect x="10" y="22" width="38" height="5" fill="rgba(0,0,0,0.12)"/>
+            <rect x="15" y="30" width="10" height="4" rx="2" fill="rgba(255,255,255,0.55)"/>
+            <circle cx="40" cy="32" r="3.5" fill="rgba(255,255,255,0.55)"/>
+            <path d="M15 19h20" stroke="rgba(255,255,255,0.82)" stroke-width="1.6" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- QR Code - Indigo -->
-        <symbol id="icon-qr" viewBox="0 0 24 24">
-            <rect fill="#5E5CE6" x="3" y="3" width="7" height="7" rx="1.5"/>
-            <rect fill="#5E5CE6" x="14" y="3" width="7" height="7" rx="1.5"/>
-            <rect fill="#5E5CE6" x="3" y="14" width="7" height="7" rx="1.5"/>
-            <rect fill="#5E5CE6" opacity="0.6" x="14" y="14" width="3" height="3" rx="0.5"/>
-            <rect fill="#5E5CE6" opacity="0.6" x="18" y="14" width="3" height="3" rx="0.5"/>
-            <rect fill="#5E5CE6" opacity="0.6" x="14" y="18" width="3" height="3" rx="0.5"/>
-            <rect fill="#5E5CE6" opacity="0.6" x="18" y="18" width="3" height="3" rx="0.5"/>
+
+        <symbol id="icon-heart" viewBox="0 0 64 64">
+            <path d="M30 46 14 31c-5-4-5.5-12 0-16.5 5-4.1 11-1.6 16 3.8 4.9-5.4 11-7.9 16-3.8 5.5 4.5 5 12.5 0 16.5z" fill="url(#icon-grad-heart)" stroke="#CC778C" stroke-width="1"/>
+            <path d="M20 17c3.5-2.3 7.6-.8 10.2 2.4" stroke="rgba(255,255,255,0.82)" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="38.5" cy="18.5" r="1.7" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Dollar - Green -->
-        <symbol id="icon-dollar" viewBox="0 0 24 24">
-            <circle fill="#32D74B" cx="12" cy="12" r="10"/>
-            <line stroke="#fff" stroke-width="2.5" stroke-linecap="round" x1="12" x2="12" y1="5" y2="19"/>
-            <path stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" d="M15 7H9.5a2.5 2.5 0 0 0 0 5h5a2.5 2.5 0 0 1 0 5H8"/>
+
+        <symbol id="icon-links" viewBox="0 0 64 64">
+            <circle cx="17" cy="17" r="7.5" fill="url(#icon-grad-links)" stroke="#6D8CCC" stroke-width="1"/>
+            <circle cx="41" cy="13" r="7" fill="url(#icon-grad-links)" stroke="#6D8CCC" stroke-width="1"/>
+            <circle cx="37" cy="39" r="7.5" fill="url(#icon-grad-links)" stroke="#6D8CCC" stroke-width="1"/>
+            <path d="M22.5 19.5L34.5 15M22 23L34 35" stroke="#6D8CCC" stroke-width="3.2" stroke-linecap="round"/>
+            <path d="M22.5 19.5L34.5 15M22 23L34 35" stroke="rgba(255,255,255,0.55)" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="14" cy="14" r="2.2" fill="rgba(255,255,255,0.82)"/>
+            <circle cx="38" cy="10" r="2" fill="rgba(255,255,255,0.82)"/>
+            <circle cx="34" cy="36" r="2.2" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Check - Green -->
-        <symbol id="icon-check" viewBox="0 0 24 24">
-            <circle fill="#32D74B" cx="12" cy="12" r="10"/>
-            <path stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M7 12l3 3 7-7"/>
+
+        <symbol id="icon-qr" viewBox="0 0 64 64">
+            <rect x="8" y="8" width="15" height="15" rx="3" fill="url(#icon-grad-qr)" stroke="#7C74CC" stroke-width="1"/>
+            <rect x="34" y="8" width="15" height="15" rx="3" fill="url(#icon-grad-qr)" stroke="#7C74CC" stroke-width="1"/>
+            <rect x="8" y="34" width="15" height="15" rx="3" fill="url(#icon-grad-qr)" stroke="#7C74CC" stroke-width="1"/>
+            <rect x="12.5" y="12.5" width="6" height="6" rx="1.5" fill="#fff" opacity="0.82"/>
+            <rect x="38.5" y="12.5" width="6" height="6" rx="1.5" fill="#fff" opacity="0.82"/>
+            <rect x="12.5" y="38.5" width="6" height="6" rx="1.5" fill="#fff" opacity="0.82"/>
+            <rect x="32" y="32" width="5" height="5" rx="1.2" fill="url(#icon-grad-qr)"/>
+            <rect x="40" y="32" width="5" height="5" rx="1.2" fill="url(#icon-grad-qr)"/>
+            <rect x="32" y="40" width="13" height="5" rx="1.2" fill="url(#icon-grad-qr)"/>
+            <circle cx="18" cy="18" r="1.8" fill="rgba(255,255,255,0.82)"/>
+            <circle cx="44" cy="18" r="1.8" fill="rgba(255,255,255,0.82)"/>
+            <circle cx="18" cy="44" r="1.8" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Trash - Red -->
-        <symbol id="icon-trash" viewBox="0 0 24 24">
-            <path fill="#FF453A" d="M3 6h18v1H3z"/>
-            <path fill="#FF453A" d="M19 7v13c0 1-1 2-2 2H7c-1 0-2-1-2-2V7h14z"/>
-            <path fill="#FF453A" opacity="0.7" d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2H8z"/>
-            <line stroke="#fff" stroke-width="1.5" stroke-linecap="round" x1="10" x2="10" y1="10" y2="18"/>
-            <line stroke="#fff" stroke-width="1.5" stroke-linecap="round" x1="14" x2="14" y1="10" y2="18"/>
+
+        <symbol id="icon-check" viewBox="0 0 64 64">
+            <path d="M30 7 43 12.5v11.5c0 9.5-6.8 16.5-13 20-6.4-3.5-13-10.5-13-20V12.5z" fill="url(#icon-grad-check)" stroke="#2A986D" stroke-width="1"/>
+            <path d="M22 26l5 5 9.5-10.5" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.88"/>
+            <path d="M22 13c2.8-1 7.2-1 10 0" stroke="rgba(255,255,255,0.82)" stroke-width="1.5" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- Plus - Blue -->
-        <symbol id="icon-plus" viewBox="0 0 24 24">
-            <circle fill="#0A84FF" cx="12" cy="12" r="10"/>
-            <line stroke="#fff" stroke-width="2.5" stroke-linecap="round" x1="12" x2="12" y1="7" y2="17"/>
-            <line stroke="#fff" stroke-width="2.5" stroke-linecap="round" x1="7" x2="17" y1="12" y2="12"/>
+
+        <symbol id="icon-trash" viewBox="0 0 64 64">
+            <rect x="15" y="15" width="24" height="28" rx="6" fill="url(#icon-grad-trash)" stroke="#C26134" stroke-width="1"/>
+            <rect x="12" y="10" width="30" height="6" rx="3" fill="url(#icon-grad-trash)" stroke="#C26134" stroke-width="1"/>
+            <rect x="21" y="6" width="12" height="5" rx="2.5" fill="url(#icon-grad-trash)" stroke="#C26134" stroke-width="1"/>
+            <path d="M23 22v14M27 22v14M31 22v14" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.72"/>
+            <path d="M18 18.5h17" stroke="rgba(255,255,255,0.82)" stroke-width="1.5" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- Trophy - Gold -->
-        <symbol id="icon-trophy" viewBox="0 0 24 24">
-            <path fill="#FFD60A" d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
-            <path fill="#FFD60A" opacity="0.7" d="M6 4H4.5a2.5 2.5 0 0 0 0 5H6V4zM18 4h1.5a2.5 2.5 0 0 1 0 5H18V4z"/>
-            <rect fill="#FFD60A" x="6" y="21" width="12" height="1"/>
-            <path fill="#FFD60A" d="M10 15v3c0 .55-.47.98-.97 1.21C7.85 19.75 7 20.5 7 21h10c0-.5-.85-1.25-2.03-1.79-.5-.23-.97-.66-.97-1.21v-3"/>
+
+        <symbol id="icon-plus" viewBox="0 0 64 64">
+            <path d="M24 11h10v12h12v10H34v12H24V33H12V23h12z" fill="url(#icon-grad-plus)" stroke="#2887A8" stroke-width="1" stroke-linejoin="round"/>
+            <path d="M26 14h6M26 14v6" stroke="rgba(255,255,255,0.82)" stroke-width="2" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- Refresh - Blue -->
-        <symbol id="icon-refresh" viewBox="0 0 24 24">
-            <path fill="#0A84FF" stroke="#fff" stroke-width="0.5" d="M3 12a9 9 0 0 1 9-9c2.5 0 4.8 1 6.5 2.6L21 8V3h-5l2.3 2.3C16.8 4 14.5 3 12 3a9 9 0 0 0-9 9h2z"/>
-            <path fill="#0A84FF" stroke="#fff" stroke-width="0.5" d="M21 12a9 9 0 0 1-9 9c-2.5 0-4.8-1-6.5-2.6L3 16v5h5l-2.3-2.3C7.2 20 9.5 21 12 21a9 9 0 0 0 9-9h-2z"/>
+
+        <symbol id="icon-trophy" viewBox="0 0 64 64">
+            <path d="M20 10h18v8c0 5.5-4.7 10-9 11v7h6.5v5.5H22.5V36H29v-7c-4.3-1-9-5.5-9-11z" fill="url(#icon-grad-trophy)" stroke="#B98724" stroke-width="1"/>
+            <path d="M16 12h-4c0 5.2 1.7 8.6 6.7 9.7" fill="none" stroke="url(#icon-grad-trophy)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M16 12h-4c0 5.2 1.7 8.6 6.7 9.7" fill="none" stroke="#B98724" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M42 12h4c0 5.2-1.7 8.6-6.7 9.7" fill="none" stroke="url(#icon-grad-trophy)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M42 12h4c0 5.2-1.7 8.6-6.7 9.7" fill="none" stroke="#B98724" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M23.5 13.5h11" stroke="rgba(255,255,255,0.82)" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="31" cy="18" r="1.8" fill="rgba(255,255,255,0.82)"/>
         </symbol>
-        
-        <!-- Download - Blue -->
-        <symbol id="icon-download" viewBox="0 0 24 24">
-            <rect fill="#0A84FF" x="3" y="17" width="18" height="4" rx="1"/>
-            <circle fill="#0A84FF" cx="12" cy="9" r="7"/>
-            <path stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M12 5v8m0 0l-3-3m3 3l3-3"/>
+
+        <symbol id="icon-refresh" viewBox="0 0 64 64">
+            <path d="M20 16a14 14 0 0 1 22 7.5" fill="none" stroke="url(#icon-grad-refresh)" stroke-width="6" stroke-linecap="round"/>
+            <path d="M20 16a14 14 0 0 1 22 7.5" fill="none" stroke="#2F86B9" stroke-width="1" stroke-linecap="round"/>
+            <path d="M37 14h7v7" fill="none" stroke="url(#icon-grad-refresh)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M37 14h7v7" fill="none" stroke="#2F86B9" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M38 34a14 14 0 0 1-22-7.5" fill="none" stroke="url(#icon-grad-refresh)" stroke-width="6" stroke-linecap="round"/>
+            <path d="M38 34a14 14 0 0 1-22-7.5" fill="none" stroke="#2F86B9" stroke-width="1" stroke-linecap="round"/>
+            <path d="M21 36h-7v-7" fill="none" stroke="url(#icon-grad-refresh)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 36h-7v-7" fill="none" stroke="#2F86B9" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M22.5 16c2.6-2.4 6.6-4.1 10.4-4.1" stroke="rgba(255,255,255,0.82)" stroke-width="1.5" stroke-linecap="round"/>
         </symbol>
-        
-        <!-- Logout - Red -->
-        <symbol id="icon-logout" viewBox="0 0 24 24">
-            <path fill="#FF453A" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4v2H5v14h4v2z"/>
-            <path fill="#FF453A" d="M16 17l5-5-5-5v3H9v4h7v3z"/>
+
+        <symbol id="icon-download" viewBox="0 0 64 64">
+            <path d="M25 9h8v16h7L29 37 18 25h7z" fill="url(#icon-grad-download)" stroke="#4464C1" stroke-width="1" stroke-linejoin="round"/>
+            <rect x="13" y="40" width="32" height="7" rx="3.5" fill="url(#icon-grad-download)" stroke="#4464C1" stroke-width="1"/>
+            <path d="M29 12v10" stroke="rgba(255,255,255,0.82)" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M16 43h14" stroke="rgba(255,255,255,0.82)" stroke-width="1.4" stroke-linecap="round"/>
+        </symbol>
+
+        <symbol id="icon-logout" viewBox="0 0 64 64">
+            <rect x="12" y="9" width="18" height="40" rx="4" fill="url(#icon-grad-logout)" stroke="#B54A41" stroke-width="1"/>
+            <path d="M29 29h16" stroke="url(#icon-grad-logout)" stroke-width="6" stroke-linecap="round"/>
+            <path d="M29 29h16" stroke="#B54A41" stroke-width="1" stroke-linecap="round"/>
+            <path d="m38 22 9 7-9 7" fill="none" stroke="url(#icon-grad-logout)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="m38 22 9 7-9 7" fill="none" stroke="#B54A41" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M15 13h9" stroke="rgba(255,255,255,0.82)" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="20" cy="29" r="1.8" fill="rgba(255,255,255,0.82)"/>
         </symbol>
     </svg>
 
@@ -236,7 +356,7 @@
     <div id="app-shell" class="app-container hidden">
         <!-- Mobile Menu Burger Button -->
         <button class="mobile-menu-burger" id="mobile-menu-burger" aria-label="Open navigation menu">
-            <svg class="icon" viewBox="0 0 24 24">
+            <svg class="icon" viewBox="0 0 64 64">
                 <path fill="currentColor" d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
             </svg>
         </button>
@@ -255,33 +375,47 @@
             <!-- Common Tabs (All Users) -->
             <div class="nav-group nav-group-common">
                 <div class="nav-group-label">Main</div>
+                
                 <button class="nav-btn active" data-page="quicklog" aria-label="Go to Quick Log page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-zap"/></svg></span>
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-zap"/></svg></span>
                     <span>Quick Log</span>
                 </button>
-                <button class="nav-btn" data-page="dashboard" aria-label="Go to Dashboard page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-chart"/></svg></span>
+                <button class="nav-btn " data-page="summary" aria-label="Go to Summary page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-chart"/></svg></span>
+                    <span>Summary</span>
+                </button>
+                <button class="nav-btn hidden" data-page="dashboard" aria-label="Go to Dashboard page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-chart"/></svg></span>
                     <span>Dashboard</span>
                 </button>
+                <button class="nav-btn hidden" data-page="earnings" aria-label="Go to Scout Earnings page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-dollar"/></svg></span>
+                    <span>Earnings</span>
+                </button>
+                <button class="nav-btn hidden" data-page="receipts" aria-label="Go to Receipts page">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-receipt"/></svg></span>
+                    <span>Receipts</span>
+                </button>
+                
             </div>
 
             <!-- Role-Specific Tabs (Leaders & Admins) -->
             <div class="nav-group nav-group-role-specific">
                 <div class="nav-group-label">Management</div>
                 <button class="nav-btn" data-page="scouts" aria-label="Go to Roster page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-users"/></svg></span>
                     <span>Roster</span>
                 </button>
                 <button class="nav-btn" data-page="communication" aria-label="Go to Communication page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-qr"/></svg></span>
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-qr"/></svg></span>
                     <span>Share</span>
                 </button>
                 <button class="nav-btn hidden" id="nav-approvals" data-page="approvals" aria-label="Go to User Management page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-users"/></svg></span>
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-users"/></svg></span>
                     <span>User Management</span>
                 </button>
                 <button class="nav-btn" data-page="operations" aria-label="Go to Operations page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-receipt"/></svg></span>
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-receipt"/></svg></span>
                     <span>Ops</span>
                 </button>
             </div>
@@ -296,13 +430,14 @@
                         <div class="nav-profile-role" id="nav-profile-role">Role: Scout</div>
                     </div>
                 </div>
-                <button class="nav-btn nav-logout-btn logout-btn" id="nav-logout-btn" aria-label="Log Out">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-logout"/></svg></span>
-                    <span>Log Out</span>
-                </button>
+               
                 <button class="nav-btn nav-settings-btn" data-page="settings" aria-label="Go to Settings page">
-                    <span class="nav-icon"><svg class="icon" viewBox="0 0 24 24"><use href="#icon-settings"/></svg></span>
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-settings"/></svg></span>
                     <span>Settings</span>
+                </button>
+                 <button class="nav-btn nav-logout-btn logout-btn" id="nav-logout-btn" aria-label="Log Out">
+                    <span class="nav-icon"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-logout"/></svg></span>
+                    <span>Log Out</span>
                 </button>
             </div>
         </nav>
@@ -347,10 +482,10 @@
                         <label for="quick-scout-select">Scout</label>
                         <input type="text" id="quick-scout-select" readonly>
                     </div>
-                    <div class="form-group">
+                     <div class="form-group hidden">
                         <label for="quick-scout">Customer name</label>
                         <input type="text" id="quick-scout" placeholder="Customer name" required>
-                    </div>
+                    </div> 
                     <div id="quick-card-fields">
                         <div class="form-group" hidden>
                             <label for="quick-product">Product (Set by Admin in Operations)</label>
@@ -408,6 +543,85 @@
                 <input type="hidden" id="qr-text">
             </section>
 
+            <!-- SUMMARY PAGE -->
+            <section id="summary-page" class="page">
+
+                 <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-chart"/></svg> Summary</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <!-- User Profile Card -->
+                <div class="summary-profile-card">
+                    <div class="summary-profile-content">
+                        <div class="summary-profile-avatar" id="summary-user-avatar">Scout Name</div>
+                        <div class="summary-profile-info">
+                            <h2 id="summary-user-name">Scout Name</h2>
+                            <p id="summary-user-role">Scout</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Key Metrics -->
+                <div class="summary-metrics-card">
+                    <div class="summary-metric-item">
+                        <div class="summary-metric-label">Total Raised</div>
+                        <div class="summary-metric-value" id="summary-total-raised">$0.00</div>
+                    </div>
+                    <div class="summary-metric-item">
+                        <div class="summary-metric-label">Cards Sold</div>
+                        <div class="summary-metric-value" id="summary-cards-sold">0</div>
+                    </div>
+                    <div class="summary-metric-item">
+                        <div class="summary-metric-label">Your Earnings</div>
+                        <div class="summary-metric-value" id="summary-earnings">$0.00</div>
+                    </div>
+                </div>
+
+                 <!-- Goal Progress -->
+                <div class="summary-goal-card">
+                    <div class="summary-goal-header">
+                        <span>Goal Progress</span>
+                        <span id="summary-goal-pct">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="summary-goal-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Goal progress bar"></div>
+                    </div>
+                    <div class="summary-goal-text" id="summary-goal-text">$0.00 of $5,000.00</div>
+                </div>
+
+                <!-- Quick Actions Grid -->
+                <div class="summary-menu-grid">
+                   
+                    <button class="summary-menu-item" id="action-view-transactions" data-page="dashboard" aria-label="Open Dashboard">
+                        <div class="summary-menu-icon">📊</div>
+                        <div class="summary-menu-title">Dashboard</div>
+                    </button>
+                     <button class="summary-menu-item" id="action-view-earnings" data-page="earnings" aria-label="Open View Earnings">
+                        <div class="summary-menu-icon">💰</div>
+                        <div class="summary-menu-title">View Earnings</div>
+                    </button>
+                    <button class="summary-menu-item" id="action-generate-receipt" data-page="receipts" aria-label="Open Generate Receipt">
+                        <div class="summary-menu-icon">📄</div>
+                        <div class="summary-menu-title">Generate Receipt</div>
+                    </button>
+                   <button class="summary-menu-item" id="action-quick-log" data-page="quicklog" aria-label="Open Quick Log">
+                        <div class="summary-menu-icon">⚡</div>
+                        <div class="summary-menu-title">Quick Log</div>
+                    </button>
+                    <button class="summary-menu-item hidden" id="action-view-receipts" data-page="receipts" aria-label="Open View Receipts">
+                        <div class="summary-menu-icon">📋</div>
+                        <div class="summary-menu-title">View Receipts</div>
+                    </button>
+                    <button class="summary-menu-item hidden" id="action-view-roster" data-page="scouts" aria-label="Open View Roster">
+                        <div class="summary-menu-icon">👥</div>
+                        <div class="summary-menu-title">View Roster</div>
+                    </button>
+                </div>
+
+               
+            </section>
+
             <!-- DASHBOARD PAGE -->
             <section id="dashboard-page" class="page">
                 <div class="page-header">
@@ -417,7 +631,7 @@
 
                 <div class="card" id="stats-overview">
                     <h3>Fundraising Overview</h3>
-                    <div class="stats-grid">
+                    <div class="stats-grid grid-col-2">
                         <div class="stat-card">
                             <div class="stat-value" id="total-raised">$0.00</div>
                             <div class="stat-label">Total Raised</div>
@@ -444,6 +658,74 @@
                             <div class="progress-fill" id="goal-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Goal progress bar"></div>
                         </div>
                         <div class="progress-text" id="goal-progress-text">$0.00 of $5,000.00</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="analytics-tabs">
+                        <button type="button" class="analytics-tab-btn active" data-tab="payments" aria-label="View payment method breakdown">💳 Payments</button>
+                        <button type="button" class="analytics-tab-btn" data-tab="types" aria-label="View transaction type breakdown">📊 Types</button>
+                    </div>
+
+                    <!-- Payments Tab -->
+                    <div class="analytics-tab-content active" id="tab-payments">
+                        <div class="analytics-grid" id="payment-breakdown-details">
+                            <div class="analytics-card">
+                                <div class="analytics-label">💵 Cash</div>
+                                <div class="analytics-value" id="payment-cash-amount">$0.00</div>
+                                <div class="analytics-meta" id="payment-cash-count">0 txn</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">💳 Card</div>
+                                <div class="analytics-value" id="payment-credit-amount">$0.00</div>
+                                <div class="analytics-meta" id="payment-credit-count">0 txn</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">📱 Venmo</div>
+                                <div class="analytics-value" id="payment-venmo-amount">$0.00</div>
+                                <div class="analytics-meta" id="payment-venmo-count">0 txn</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">💰 CashApp</div>
+                                <div class="analytics-value" id="payment-cashapp-amount">$0.00</div>
+                                <div class="analytics-meta" id="payment-cashapp-count">0 txn</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">🏦 Zelle</div>
+                                <div class="analytics-value" id="payment-zelle-amount">$0.00</div>
+                                <div class="analytics-meta" id="payment-zelle-count">0 txn</div>
+                            </div>
+                            <div class="analytics-card">
+                                <div class="analytics-label">🍎 ApplePay</div>
+                                <div class="analytics-value" id="payment-applepay-amount">$0.00</div>
+                                <div class="analytics-meta" id="payment-applepay-count">0 txn</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Types Tab -->
+                    <div class="analytics-tab-content" id="tab-types">
+                        <div class="type-breakdown-grid" id="type-breakdown-details">
+                            <div class="type-breakdown-card">
+                                <div class="type-breakdown-icon">💳</div>
+                                <div class="type-breakdown-label">Cards</div>
+                                <div class="type-breakdown-value" id="type-cards-amount">$0.00</div>
+                                <div class="type-breakdown-meta">
+                                    <span id="type-cards-count">0 sales</span>
+                                    <span id="type-cards-qty">0 cards</span>
+                                </div>
+                                <div class="type-breakdown-percent" id="type-cards-percent">0%</div>
+                            </div>
+                            <div class="type-breakdown-card">
+                                <div class="type-breakdown-icon">💝</div>
+                                <div class="type-breakdown-label">Donations</div>
+                                <div class="type-breakdown-value" id="type-donations-amount">$0.00</div>
+                                <div class="type-breakdown-meta">
+                                    <span id="type-donations-count">0 qty</span>
+                                </div>
+                                <div class="type-breakdown-percent" id="type-donations-percent">0%</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -744,6 +1026,160 @@
                 </div>
             </section>
 
+            <!-- RECEIPTS PAGE -->
+            <section id="receipts-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-receipt"/></svg> Receipts</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card">
+                    <h3>Generate Receipt</h3>
+                    <div class="form-group">
+                        <label for="receipt-type">Receipt Type</label>
+                        <select id="receipt-type" class="form-select-styled">
+                            <option value="scout">Scout Receipt (Individual Sales)</option>
+                             <!-- <option value="troop">Troop Receipt (All Sales Summary)</option> -->
+                        </select>
+                    </div> 
+
+                    <!-- Scout Receipt Form -->
+                    <div id="scout-receipt-form" class="receipt-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="receipt-scout-name">Scout Name *</label>
+                                <input type="text" id="receipt-scout-name" class="form-input" placeholder="Enter scout name">
+                            </div>
+                            <div class="form-group">
+                                <label for="receipt-troop-name">Troop Name</label>
+                                <input type="text" id="receipt-troop-name" class="form-input" placeholder="e.g., Troop 242">
+                            </div>
+                                          
+                            <div class="form-group">
+                                <label for="receipt-date">Date & Time</label>
+                                <input type="datetime-local" id="receipt-date" class="form-input">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Sales Summary</label>
+                            <div id="receipt-sales-summary" class="info-box">
+                                <div class="summary-stat">
+                                    <span>Total Amount: </span>
+                                    <strong id="receipt-total-amount">$0.00</strong>
+                                </div>
+                                <div class="summary-stat">
+                                    <span>Total Cards Sold: </span>
+                                    <strong id="receipt-total-cards">0</strong>
+                                </div>
+                                <div class="summary-stat">
+                                    <span>Total Donations: </span>
+                                    <strong id="receipt-total-donations">0</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button type="button" class="btn btn-primary" id="generate-scout-receipt" aria-label="Generate Scout Receipt">Generate Receipt</button>
+                        </div>
+                    </div>
+
+                    <!-- Troop Receipt Form -->
+                    <div id="troop-receipt-form" class="receipt-form hidden">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="troop-receipt-name">Troop Name *</label>
+                                <input type="text" id="troop-receipt-name" class="form-input" placeholder="e.g., Troop 242">
+                            </div>
+                            <div class="form-group">
+                                <label for="troop-receipt-number">Troop Number</label>
+                                <input type="text" id="troop-receipt-number" class="form-input" placeholder="e.g., 242">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="troop-receipt-tax-id">Tax Exempt ID</label>
+                                <input type="text" id="troop-receipt-tax-id" class="form-input" placeholder="Optional">
+                            </div>
+                            <div class="form-group">
+                                <label for="troop-receipt-date">Date & Time</label>
+                                <input type="datetime-local" id="troop-receipt-date" class="form-input">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Troop Sales Summary</label>
+                            <div id="troop-receipt-sales-summary" class="info-box">
+                                <div class="summary-stat">
+                                    <span>Total Amount: </span>
+                                    <strong id="troop-receipt-total-amount">$0.00</strong>
+                                </div>
+                                <div class="summary-stat">
+                                    <span>Total Cards Sold: </span>
+                                    <strong id="troop-receipt-total-cards">0</strong>
+                                </div>
+                                <div class="summary-stat">
+                                    <span>Total Donations: </span>
+                                    <strong id="troop-receipt-total-donations">0</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button type="button" class="btn btn-primary" id="generate-troop-receipt" aria-label="Generate Troop Receipt">Generate Receipt</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Receipt History -->
+                <div class="card">
+                    <h3>Receipt History</h3>
+                    <div id="receipt-history" class="receipt-list">
+                        <!-- Receipts will be loaded here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- EARNINGS PAGE -->
+            <section id="earnings-page" class="page">
+                <div class="page-header">
+                    <h2><svg class="icon icon-heading"><use href="#icon-dollar"/></svg> Scout Earnings</h2>
+                    <button class="btn btn-secondary logout-btn" aria-label="Log Out"><svg class="icon icon-btn"><use href="#icon-logout"/></svg><span class="logout-label">Log Out</span></button>
+                </div>
+
+                <div class="card">
+                    <h3>Earnings Overview</h3>
+                    <div class="stats-grid">
+                         <div class="stat-card">
+                            <div class="stat-value" id="earnings-cards-count">0</div>
+                            <div class="stat-label">Cards Sold</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="earnings-donations">$0.00</div>
+                            <div class="stat-label">Donations</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="earnings-cards-amount">$0.00</div>
+                            <div class="stat-label">Commission (total cards sold X $4.50 ea)</div>
+                        </div>
+                        <div class="stat-card earnings-total-card">
+                            <div class="stat-value earnings-total-value" id="earnings-total">$0.00</div>
+                            <div class="stat-label earnings-total-label">Total Earnings</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Transaction History</h3>
+                    <div class="earnings-breakdown">
+                        <div id="earnings-history" class="earnings-items">
+                            <!-- Earnings items will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- OPERATIONS PAGE -->
             <section id="operations-page" class="page">
                 <div class="page-header">
@@ -871,6 +1307,37 @@
                         <!-- <button type="button" class="btn btn-danger" id="delete-all-sales" style="display:none;" title="Permanently delete all sales (Admins only)">Delete All Sales</button> -->
                     </div> 
                 </div>
+                <div class="card">
+                    <h3>📄 Receipt Settings (Admin/Leader)</h3>
+                    <p class="text-info-small">Configure receipt settings for your troop.</p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="admin-receipt-troop-name">Troop Name</label>
+                            <input type="text" id="admin-receipt-troop-name" class="form-input" placeholder="e.g., Troop 242">
+                        </div>
+                        <div class="form-group">
+                            <label for="admin-receipt-troop-number">Troop Number</label>
+                            <input type="text" id="admin-receipt-troop-number" class="form-input" placeholder="e.g., 242">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="admin-receipt-tax-id">Tax Exempt ID</label>
+                            <input type="text" id="admin-receipt-tax-id" class="form-input" placeholder="Optional - for tax deduction purposes">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="admin-receipt-enabled" checked aria-label="Enable receipts feature for scouts">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="field-control-label-offset">Enable Receipts for Scouts</span>
+                    </div>
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-primary" id="save-receipt-settings" aria-label="Save receipt settings">Save Settings</button>
+                    </div>
+                </div>
+
                 <div class="card info-box-red">
                     <h3>🔴 Data Reset & Archive (Admin Only)</h3>
                     <p class="text-muted">⚠️ Complete campaign reset. Saves all current data to CSV backup before permanent deletion.</p>
@@ -895,7 +1362,7 @@
                             <p id="admin-email">email@example.com</p>
                             <div class="admin-profile-info-row">
                                 <p id="admin-role" class="admin-role">Role: Scout</p>
-                                <p id="admin-unit-id" class="admin-unit-id" style="display: none;">Unit ID: <code id="unit-id-display"></code></p>
+                                <p id="admin-unit-id" class="admin-unit-id hidden">Unit ID: <code id="unit-id-display"></code></p>
                             </div>
                         </div>
                     </div>
@@ -953,7 +1420,7 @@
                     <h3>Database Cleanup (Admin)</h3>
                     <p class="step-note">Remove orphaned profile documents where scouts no longer exist in the unit roster.</p>
                     <button type="button" class="btn btn-secondary" id="cleanup-orphaned-profiles-btn" aria-label="Cleanup orphaned profiles">Cleanup Orphaned Profiles</button>
-                    <p id="cleanup-status" class="step-note" style="margin-top: 1rem; display: none;"></p>
+                    <p id="cleanup-status" class="step-note cleanup-status hidden"></p>
                 </div>
 
                 <div class="card">
