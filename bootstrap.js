@@ -72,7 +72,9 @@ function fixIconSvgs() {
   document
     .querySelectorAll('svg.icon, svg.icon-btn, svg.icon-heading, svg.icon-heading-sm, svg.icon-header')
     .forEach(svg => {
-      svg.setAttribute('viewBox', '0 0 24 24');
+      if (!svg.hasAttribute('viewBox')) {
+        svg.setAttribute('viewBox', '0 0 64 64');
+      }
       svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     });
 }
@@ -84,9 +86,10 @@ fixIconSvgs();
 const iconObserver = new MutationObserver(fixIconSvgs);
 iconObserver.observe(document.body, { childList: true, subtree: true });
 
-// Load firebase-config FIRST, then app.js, then initialize
+// Load firebase-config FIRST, then app.js, then receipt.js, then initialize
 await loadScript('firebase-config.js');
 await loadScript('app.js');
+await loadScript('receipt.js');
 
 // DOMContentLoaded has already fired by now (module scripts are deferred),
 // so call initializeFirebase directly

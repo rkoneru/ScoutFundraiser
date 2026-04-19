@@ -5,6 +5,7 @@
 let db, auth, currentUser = null;
 let app = null;
 let deferredInstallPrompt = null;
+let receiptManager = null;
 const MAX_QR_IMAGE_FILE_BYTES = 300 * 1024;
 const MAX_QR_IMAGE_DATAURL_BYTES = 350 * 1024;
 
@@ -376,12 +377,8 @@ function filterAndSortSales(sales, filters = {}) {
         filtered = filtered.filter(s => s.paymentMethod === filters.paymentFilter);
     }
 
-    // Sort by date (newest first)
-    filtered.sort((a, b) => {
-        const dateA = a.date ? new Date(a.date) : new Date(0);
-        const dateB = b.date ? new Date(b.date) : new Date(0);
-        return dateB - dateA;
-    });
+    // Sort by database created date-time (newest first)
+    filtered.sort((a, b) => getSaleSortMs(b) - getSaleSortMs(a));
 
     return filtered;
 }
@@ -392,7 +389,9 @@ function filterAndSortSales(sales, filters = {}) {
  * @param {Element} container - DOM element to populate
  * @param {Object} currentUser - Current user object
  */
-function renderSalesList(sales, container, currentUser) {
+function renderSalesList(sales, container, currentUser, options = {}) {
+    const showDateTime = !!options.showDateTime;
+
     if (sales.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><svg class="icon"><use href="#icon-receipt"/></svg></div><p>No sales found</p></div>';
         return;
@@ -402,11 +401,12 @@ function renderSalesList(sales, container, currentUser) {
     sales.forEach(sale => {
         const typeClass = sale.type === 'card' ? 'card-sale' : 'donation';
         const typeLabel = sale.type === 'card' ? 'Scout Card' : 'Donation';
+        const dateLabel = showDateTime ? formatSaleDateTime(sale) : formatDate(sale.date);
 
         html += `<div class="sale-item" data-sale-id="${sale.id}">
             <div class="sale-info">
                 <h5>${escapeHTML(sale.scoutName || currentUser.displayName || 'Scout')}</h5>
-                <p>${escapeHTML(sale.customerName || 'Customer')} &bull; ${formatDate(sale.date)}</p>
+                <p>${escapeHTML(sale.customerName || 'Customer')} &bull; ${dateLabel}</p>
             </div>
             <div class="sale-right">
                 <div class="sale-amount">${formatMoney(sale.amount)}</div>
@@ -532,8 +532,26 @@ async function registerServiceWorkerIfSupported() {
         return;
     }
 
+    const hostname = window.location.hostname;
+    const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1';
+
+    if (isLocalDev) {
+        try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(registration => registration.unregister()));
+            console.log('Service Worker disabled for local development');
+        } catch (error) {
+            console.warn('Failed to disable Service Worker for local development:', error);
+        }
+        return;
+    }
+
     try {
-        await navigator.serviceWorker.register('sw.js');
+        const serviceWorkerUrl = new URL('sw.js', window.location.href);
+        const registration = await navigator.serviceWorker.register(serviceWorkerUrl, { scope: './' });
+        registration.update().catch(() => {
+            // Ignore update check failures; the existing worker can still serve the app.
+        });
         console.log('Service Worker registered');
     } catch (error) {
         console.warn('Service Worker registration failed:', error);
@@ -766,6 +784,12 @@ function getLocalDateInputValue(date = new Date()) {
     return local.toISOString().split('T')[0];
 }
 
+function getLocalDateTimeInputValue(date = new Date()) {
+    const offsetMs = date.getTimezoneOffset() * 60000;
+    const local = new Date(date.getTime() - offsetMs);
+    return local.toISOString().slice(0, 16);
+}
+
 function isValidUrl(urlString) {
     if (!urlString) return true; // Empty is OK
     try {
@@ -784,6 +808,47 @@ function formatDate(dateVal) {
         return new Date(y, m - 1, d).toLocaleDateString();
     }
     return new Date(dateVal).toLocaleDateString();
+}
+
+function getSaleCreatedDate(sale) {
+    if (!sale) return null;
+
+    const createdAt = sale.createdAt;
+    if (createdAt && typeof createdAt.toDate === 'function') {
+        return createdAt.toDate();
+    }
+
+    if (createdAt) {
+        const createdDate = new Date(createdAt);
+        if (!Number.isNaN(createdDate.getTime())) {
+            return createdDate;
+        }
+    }
+
+    const rawDate = sale.date;
+    if (!rawDate) return null;
+
+    if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        const [y, m, d] = rawDate.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+
+    const fallbackDate = new Date(rawDate);
+    if (!Number.isNaN(fallbackDate.getTime())) {
+        return fallbackDate;
+    }
+
+    return null;
+}
+
+function getSaleSortMs(sale) {
+    const createdDate = getSaleCreatedDate(sale);
+    return createdDate ? createdDate.getTime() : 0;
+}
+
+function formatSaleDateTime(sale) {
+    const createdDate = getSaleCreatedDate(sale);
+    return createdDate ? createdDate.toLocaleString() : '';
 }
 
 function getAuthErrorMessage(error, mode = 'login') {
@@ -843,7 +908,8 @@ async function addSaleToFirestore(userId, saleData) {
         const { collection, addDoc, serverTimestamp } = window.firebaseImports;
         const docRef = await addDoc(collection(db, `users/${userId}/sales`), {
             ...saleData,
-            createdAt: serverTimestamp()
+            createdAt: serverTimestamp(),
+            createdAtClient: new Date().toISOString(),
         });
         return docRef.id;
     } catch (e) {
@@ -2473,6 +2539,10 @@ class ScoutFundraiserApp {
         return true;
     }
 
+    isQuickLinksVisibleForViewport() {
+        return window.matchMedia('(max-width: 900px)').matches;
+    }
+
     applyNavigationVisibility() {
         document.querySelectorAll('.nav-btn').forEach(btn => {
             const page = btn.dataset.page;
@@ -3094,6 +3164,11 @@ class ScoutFundraiserApp {
         // Only bind event listeners once to prevent duplicates
         if (!this._setupDone) {
             this._setupDone = true;
+
+            // Initialize Receipt Manager
+            receiptManager = new ReceiptManager(db, this.currentUser.uid);
+            window.receiptManager = receiptManager;
+
             this.setupNavigation();
             this.setupQuickLogPage();
             this.setupDashboardPage();
@@ -3101,6 +3176,8 @@ class ScoutFundraiserApp {
             await this.setupScoutsPage();
             this.setupCommunicationPage();
             this.setupOperationsPage();
+            this.setupReceiptSettings();
+            this.setupReceipts();
             this.setupSettingsPage();
             this.setupLogout();
             this.setupModals();
@@ -3148,6 +3225,25 @@ class ScoutFundraiserApp {
                 this.closeMobileMenu();
             });
         });
+
+        if (!this._navigationResizeBound) {
+            this._navigationResizeBound = true;
+            window.addEventListener('resize', () => {
+                this.applyNavigationVisibility();
+            });
+        }
+
+        if (!this._hashNavigationBound) {
+            this._hashNavigationBound = true;
+            window.addEventListener('hashchange', () => {
+                const page = window.location.hash.replace('#', '') || 'quicklog';
+                if (page !== this.currentPage) {
+                    this.navigateTo(page);
+                }
+            });
+        }
+
+        this.setupSummaryActionButtons();
 
         // Setup mobile menu
         this.setupMobileMenu();
@@ -3247,9 +3343,17 @@ class ScoutFundraiserApp {
         // Reload fresh data from Firestore on every page switch
         await this.loadSales();
 
+        if (page === 'summary') {
+            this.refreshSummaryPage();
+        }
         if (page === 'quicklog') {
             this.scouts = await getScoutsFromFirestore(this.currentUnitId);
             this.populateScoutDropdown();
+
+            const quickDateInput = document.getElementById('quick-date');
+            if (quickDateInput) {
+                quickDateInput.value = getLocalDateInputValue();
+            }
 
             // 3-step process: Focus on type toggle (Step 1)
             document.getElementById('type-btn-card').focus();
@@ -3263,6 +3367,14 @@ class ScoutFundraiserApp {
             this.refreshLeaderboard();
         }
         if (page === 'communication') this.refreshCommunicationPage();
+        if (page === 'receipts') {
+            await this.prepopulateReceiptForms();
+            this.updateReceiptSummaryStats();
+            this.loadReceiptHistory();
+        }
+        if (page === 'earnings') {
+            this.loadEarningsData();
+        }
         if (page === 'operations') {
             this.allSales = await getAllSalesFromFirestore(this.currentUnitId);
             this.products = await getProductsFromFirestore(this.currentUnitId);
@@ -3353,6 +3465,10 @@ class ScoutFundraiserApp {
 
             // OPTIMIZATION: Smart page-specific updates (Dashboard Phase 1)
             // Only update pages where sales data affects rendering
+            if (this.currentPage === 'summary') {
+                // Summary: Update all stats
+                this.refreshSummaryPage();
+            }
             if (this.currentPage === 'dashboard') {
                 // Dashboard: Use smart render detection to avoid unnecessary updates
                 this.refreshDashboard();
@@ -3491,6 +3607,29 @@ class ScoutFundraiserApp {
             }
         };
         document.getElementById('dash-sales-list').addEventListener('click', this.dashboardListeners.listClick);
+
+        this.setupAnalyticsTabs();
+    }
+
+    setupAnalyticsTabs() {
+        // Tab switching for mobile dashboard
+        const tabBtns = document.querySelectorAll('.analytics-tab-btn');
+        const tabContents = document.querySelectorAll('.analytics-tab-content');
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.getAttribute('data-tab');
+
+                // Remove active class from all buttons and contents
+                tabBtns.forEach(b => b.classList.remove('active'));
+                tabContents.forEach(c => c.classList.remove('active'));
+
+                // Add active class to clicked button and corresponding content
+                btn.classList.add('active');
+                const activeTab = document.getElementById(`tab-${tabName}`);
+                if (activeTab) activeTab.classList.add('active');
+            });
+        });
     }
 
     // OPTIMIZATION: Cache for smart render detection (Dashboard Phase 1)
@@ -3634,10 +3773,183 @@ class ScoutFundraiserApp {
         document.getElementById('goal-pct').textContent = progress.toFixed(1) + '%';
         document.getElementById('goal-progress-text').textContent = formatMoney(stats.totalRaised) + ' of ' + formatMoney(goal);
 
+        // Update analytics breakdowns
+        this.updatePaymentMethodBreakdown();
+        this.updateTransactionTypeBreakdown();
+
         this.renderDashTransactions();
 
         // Update cache after rendering
         this.updateDashboardCache();
+    }
+
+    updatePaymentMethodBreakdown() {
+        const paymentMethods = {
+            'Cash': { amount: 0, count: 0 },
+            'CreditCard': { amount: 0, count: 0 },
+            'Venmo': { amount: 0, count: 0 },
+            'CashApp': { amount: 0, count: 0 },
+            'Zelle': { amount: 0, count: 0 },
+            'ApplePay': { amount: 0, count: 0 }
+        };
+
+        this.sales.forEach(sale => {
+            const method = sale.paymentMethod || 'Cash';
+            const key = Object.keys(paymentMethods).find(k => k.toLowerCase() === method.toLowerCase()) || 'Cash';
+            paymentMethods[key].amount += Number(sale.amount) || 0;
+            paymentMethods[key].count++;
+        });
+
+        // Update UI
+        const methods = {
+            'Cash': 'cash',
+            'CreditCard': 'credit',
+            'Venmo': 'venmo',
+            'CashApp': 'cashapp',
+            'Zelle': 'zelle',
+            'ApplePay': 'applepay'
+        };
+
+        Object.entries(methods).forEach(([key, prefix]) => {
+            const data = paymentMethods[key];
+            document.getElementById(`payment-${prefix}-amount`).textContent = formatMoney(data.amount);
+            document.getElementById(`payment-${prefix}-count`).textContent = data.count + (data.count === 1 ? ' transaction' : ' transactions');
+        });
+    }
+
+    updateTransactionTypeBreakdown() {
+        let cardAmount = 0, cardCount = 0, cardQty = 0;
+        let donationAmount = 0, donationCount = 0;
+
+        this.sales.forEach(sale => {
+            if (sale.type === 'card') {
+                cardAmount += Number(sale.amount) || 0;
+                cardCount++;
+                const qty = Number(sale.qty || 1);
+                cardQty += Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+            } else if (sale.type === 'donation') {
+                donationAmount += Number(sale.amount) || 0;
+                donationCount++;
+            }
+        });
+
+        const totalAmount = cardAmount + donationAmount;
+        const cardPercent = totalAmount > 0 ? (cardAmount / totalAmount * 100) : 0;
+        const donationPercent = totalAmount > 0 ? (donationAmount / totalAmount * 100) : 0;
+
+        const cardAmountEl = document.getElementById('type-cards-amount');
+        const cardCountEl = document.getElementById('type-cards-count');
+        const cardQtyEl = document.getElementById('type-cards-qty');
+        const cardPercentEl = document.getElementById('type-cards-percent');
+        const donationAmountEl = document.getElementById('type-donations-amount');
+        const donationCountEl = document.getElementById('type-donations-count');
+        const donationPercentEl = document.getElementById('type-donations-percent');
+
+        if (!cardAmountEl || !cardCountEl || !cardQtyEl || !cardPercentEl || !donationAmountEl || !donationCountEl || !donationPercentEl) {
+            return;
+        }
+
+        // Update card breakdown
+        cardAmountEl.textContent = formatMoney(cardAmount);
+        cardCountEl.textContent = cardCount + (cardCount === 1 ? ' sale' : ' sales');
+        cardQtyEl.textContent = cardQty + ' card' + (cardQty !== 1 ? 's' : '');
+        cardPercentEl.textContent = cardPercent.toFixed(1) + '%';
+
+        // Update donation breakdown
+        donationAmountEl.textContent = formatMoney(donationAmount);
+        donationCountEl.textContent = donationCount + (donationCount === 1 ? ' donation' : ' donations');
+        donationPercentEl.textContent = donationPercent.toFixed(1) + '%';
+    }
+
+    // ==================== SUMMARY PAGE ====================
+
+    async refreshSummaryPage() {
+        try {
+            const sales = this.sales || [];
+
+            // Update user profile
+            const userName = this.currentUser && this.currentUser.displayName ? this.currentUser.displayName : 'Scout';
+            const userInitial = userName.charAt(0).toUpperCase();
+            document.getElementById('summary-user-name').textContent = userName;
+            document.getElementById('summary-user-avatar').textContent = userInitial;
+            document.getElementById('summary-user-role').textContent = this.getRoleLabel();
+
+            // Calculate stats
+            let totalRaised = 0;
+            let cardsSold = 0;
+            let donations = 0;
+            let cardCommission = 0;
+
+            sales.forEach(sale => {
+                totalRaised += Number(sale.amount) || 0;
+                if (sale.type === 'card') {
+                    const qty = Number(sale.qty || 1);
+                    cardsSold += Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                    cardCommission += (Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1) * 4.50;
+                } else if (sale.type === 'donation') {
+                    donations += Number(sale.amount) || 0;
+                }
+            });
+
+            // Update summary stats
+            document.getElementById('summary-total-raised').textContent = formatMoney(totalRaised);
+            document.getElementById('summary-cards-sold').textContent = cardsSold;
+            document.getElementById('summary-earnings').textContent = formatMoney(donations + cardCommission);
+
+            // Update goal progress
+            const isLeaderOrAdmin = isLeaderOrAdminRole(this.currentRole);
+            let goal;
+
+            if (isLeaderOrAdmin) {
+                goal = (this.settings && this.settings.fundraisingGoal) || DEFAULTS.FUNDRAISING_GOAL;
+            } else {
+                const personalGoal = Number(this.currentProfile && this.currentProfile.personalGoal);
+                goal = (Number.isFinite(personalGoal) && personalGoal > 0)
+                    ? personalGoal
+                    : ((this.settings && this.settings.fundraisingGoal) || DEFAULTS.FUNDRAISING_GOAL);
+            }
+
+            const progress = goal > 0 ? (totalRaised / goal) * 100 : 0;
+            document.getElementById('summary-goal-progress').style.width = Math.min(progress, DEFAULTS.MAX_PROGRESS_PCT) + '%';
+            document.getElementById('summary-goal-pct').textContent = progress.toFixed(1) + '%';
+            document.getElementById('summary-goal-text').textContent = formatMoney(totalRaised) + ' of ' + formatMoney(goal);
+
+            // Setup action button listeners
+            this.setupSummaryActionButtons();
+        } catch (error) {
+            console.error('Error refreshing summary page:', error);
+        }
+    }
+
+    setupSummaryActionButtons() {
+        const summaryPage = document.getElementById('summary-page');
+        if (!summaryPage || this._summaryActionsBound) return;
+
+        const handleSummaryAction = (target) => {
+            const action = target.closest('.summary-menu-item[data-page]');
+            if (!action) return;
+
+            const page = action.dataset.page;
+            if (!page) return;
+
+            this.navigateTo(page);
+            window.location.hash = page;
+        };
+
+        summaryPage.addEventListener('click', (event) => {
+            handleSummaryAction(event.target);
+        });
+
+        summaryPage.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const action = event.target.closest('.summary-menu-item[data-page]');
+            if (!action) return;
+
+            event.preventDefault();
+            handleSummaryAction(action);
+        });
+
+        this._summaryActionsBound = true;
     }
 
     // OPTIMIZATION: Cache for smart transaction list render detection
@@ -3705,7 +4017,7 @@ class ScoutFundraiserApp {
         });
 
         const container = document.getElementById('dash-sales-list');
-        renderSalesList(filtered, container, this.currentUser);
+        renderSalesList(filtered, container, this.currentUser, { showDateTime: true });
 
         // Update cache after rendering
         this.updateDashTransactionsCache();
@@ -3858,19 +4170,39 @@ class ScoutFundraiserApp {
         if (!sale) return;
 
         const typeLabel = sale.type === 'card' ? 'Scout Card' : 'Donation';
+
+        // Firestore Timestamp object
         const typeClass = sale.type === 'card' ? 'card-sale' : 'donation';
 
         const container = document.getElementById('sale-detail');
         container.innerHTML = `
+        // Firestore-like plain object shapes from serialization
+        if (createdAt && typeof createdAt === 'object') {
+            const seconds = Number(createdAt.seconds ?? createdAt._seconds);
+            const nanoseconds = Number(createdAt.nanoseconds ?? createdAt._nanoseconds ?? 0);
+            if (Number.isFinite(seconds)) {
+                return new Date((seconds * 1000) + Math.floor((Number.isFinite(nanoseconds) ? nanoseconds : 0) / 1000000));
+            }
+        }
+
+        // ISO or epoch-like createdAt
             <h3>Sale Details</h3>
             <div style="margin: 1rem 0;">
                 <div class="sale-badges" style="justify-content: flex-start; margin-bottom: 1rem;">
                     <span class="sale-type-badge ${typeClass}">${typeLabel}</span>
                     <span class="payment-badge">${escapeHTML(sale.paymentMethod)}</span>
                 </div>
+
+        // Client-side creation timestamp fallback (for reliability when serverTimestamp is delayed)
+        if (sale.createdAtClient) {
+            const createdClientDate = new Date(sale.createdAtClient);
+            if (!Number.isNaN(createdClientDate.getTime())) {
+                return createdClientDate;
+            }
+        }
                 <p><strong>Amount:</strong> ${formatMoney(sale.amount)}</p>
                 <p><strong>Customer:</strong> ${escapeHTML(sale.customerName)}</p>
-                <p><strong>Date:</strong> ${formatDate(sale.date)}</p>
+                <p><strong>Date:</strong> ${formatSaleDateTime(sale)}</p>
             </div>
             <button class="btn btn-danger btn-small" id="delete-sale-btn"><svg class="icon icon-btn"><use href="#icon-trash"/></svg> Delete Sale</button>
         `;
@@ -5619,6 +5951,77 @@ class ScoutFundraiserApp {
             deleteAll: null,
             reset: null
         };
+    }
+
+    setupReceiptSettings() {
+        try {
+            if (!this.canAccessOperations()) return;
+
+            const saveBtn = document.getElementById('save-receipt-settings');
+            if (!saveBtn) {
+                console.warn('[RECEIPT SETTINGS] Save button not found, skipping setup');
+                return;
+            }
+
+        const troopNameInput = document.getElementById('admin-receipt-troop-name');
+        const troopNumberInput = document.getElementById('admin-receipt-troop-number');
+        const taxIdInput = document.getElementById('admin-receipt-tax-id');
+        const enabledCheckbox = document.getElementById('admin-receipt-enabled');
+
+        this.loadReceiptSettings();
+
+            saveBtn.addEventListener('click', async () => {
+                try {
+                    const settings = {
+                        troopName: troopNameInput.value,
+                        troopNumber: troopNumberInput.value,
+                        taxExemptId: taxIdInput.value,
+                        receiptsEnabled: enabledCheckbox.checked
+                    };
+
+                    await this.saveReceiptSettings(settings);
+                    alert('Receipt settings saved successfully!');
+                } catch (error) {
+                    console.error('Error saving receipt settings:', error);
+                    alert('Failed to save receipt settings');
+                }
+            });
+        } catch (error) {
+            console.error('Error setting up receipt settings:', error);
+        }
+    }
+
+    async loadReceiptSettings() {
+        try {
+            const { getDoc, doc } = window.firebaseImports;
+            const settingsDoc = await getDoc(doc(db, 'units', this.currentUnitId));
+
+            if (settingsDoc.exists()) {
+                const data = settingsDoc.data();
+                if (data.receiptSettings) {
+                    document.getElementById('admin-receipt-troop-name').value = data.receiptSettings.troopName || '';
+                    document.getElementById('admin-receipt-troop-number').value = data.receiptSettings.troopNumber || '';
+                    document.getElementById('admin-receipt-tax-id').value = data.receiptSettings.taxExemptId || '';
+                    document.getElementById('admin-receipt-enabled').checked = data.receiptSettings.receiptsEnabled !== false;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading receipt settings:', error);
+        }
+    }
+
+    async saveReceiptSettings(settings) {
+        try {
+            const { setDoc, doc } = window.firebaseImports;
+            await setDoc(
+                doc(db, 'units', this.currentUnitId),
+                { receiptSettings: settings },
+                { merge: true }
+            );
+        } catch (error) {
+            console.error('Error saving receipt settings:', error);
+            throw error;
+        }
     }
 
     async setupOperationsPage() {
@@ -7472,6 +7875,458 @@ class ScoutFundraiserApp {
         });
     }
 
+    // ==================== RECEIPTS ====================
+
+    setupReceipts() {
+        const receiptTypeSelect = document.getElementById('receipt-type');
+        const scoutReceiptForm = document.getElementById('scout-receipt-form');
+        const troopReceiptForm = document.getElementById('troop-receipt-form');
+        const generateScoutBtn = document.getElementById('generate-scout-receipt');
+        const generateTroopBtn = document.getElementById('generate-troop-receipt');
+        const receiptDateInput = document.getElementById('receipt-date');
+        const troopDateInput = document.getElementById('troop-receipt-date');
+
+        // Safety check - if critical elements don't exist, skip setup
+        if (!receiptTypeSelect || !scoutReceiptForm || !troopReceiptForm || !generateScoutBtn || !generateTroopBtn) {
+            console.warn('[RECEIPT] Some receipt form elements not found, skipping setup');
+            return;
+        }
+
+        // Set current date and time in datetime-local format
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const dateTimeValue = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+        if (receiptDateInput) receiptDateInput.value = dateTimeValue;
+        if (troopDateInput) troopDateInput.value = dateTimeValue;
+
+        receiptTypeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'scout') {
+                scoutReceiptForm.classList.remove('hidden');
+                troopReceiptForm.classList.add('hidden');
+            } else {
+                scoutReceiptForm.classList.add('hidden');
+                troopReceiptForm.classList.remove('hidden');
+            }
+        });
+
+        generateScoutBtn.addEventListener('click', () => this.generateScoutReceiptHandler());
+        generateTroopBtn.addEventListener('click', () => this.generateTroopReceiptHandler());
+
+        // Pre-populate form fields from database
+        this.prepopulateReceiptForms();
+
+        // Populate sales summary
+        this.updateReceiptSummaryStats();
+
+        this.loadReceiptHistory();
+    }
+
+    async prepopulateReceiptForms() {
+        try {
+            const setInputValue = (id, value) => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.value = value;
+                }
+            };
+
+            // Populate scout name from current user
+            const scoutNameInput = document.getElementById('receipt-scout-name');
+            if (!scoutNameInput) {
+                console.warn('[RECEIPT] Receipt form elements not found');
+                return;
+            }
+
+            if (currentUser && currentUser.displayName) {
+                scoutNameInput.value = currentUser.displayName;
+            } else if (this.currentProfile) {
+                scoutNameInput.value = this.currentProfile.name || '';
+            }
+
+            // Load troop settings from database
+            const { getDoc, doc } = window.firebaseImports;
+            const unitDoc = await getDoc(doc(db, 'units', this.currentUnitId));
+
+            if (unitDoc.exists()) {
+                const data = unitDoc.data();
+                const receiptSettings = data.receiptSettings || {};
+                const troopName = receiptSettings.troopName || data.name || '';
+                const troopNumber = receiptSettings.troopNumber || '';
+                const taxExemptId = receiptSettings.taxExemptId || '';
+
+                // Populate scout form
+                setInputValue('receipt-troop-name', troopName);
+                setInputValue('receipt-troop-number', troopNumber);
+                setInputValue('receipt-tax-id', taxExemptId);
+
+                // Populate troop form
+                setInputValue('troop-receipt-name', troopName);
+                setInputValue('troop-receipt-number', troopNumber);
+                setInputValue('troop-receipt-tax-id', taxExemptId);
+
+                console.log('[RECEIPT] Pre-populated form fields from database');
+            }
+        } catch (error) {
+            console.error('Error pre-populating receipt forms:', error);
+        }
+    }
+
+    updateReceiptSummaryStats() {
+        const sales = this.sales || [];
+        const totalAmount = sales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+        const totalCards = sales.filter(s => s.type === 'card').reduce((sum, s) => {
+            const qty = Number(s.qty || 1);
+            return sum + (Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1);
+        }, 0);
+        const totalCardsamount = totalCards*10;
+        const totalDonations = sales.filter(s => s.type === 'donation').length;
+
+        const receiptTotalAmountEl = document.getElementById('receipt-total-amount');
+        const receiptTotalCardsEl = document.getElementById('receipt-total-cards');
+        const receiptTotalDonationsEl = document.getElementById('receipt-total-donations');
+        const troopReceiptTotalAmountEl = document.getElementById('troop-receipt-total-amount');
+        const troopReceiptTotalCardsEl = document.getElementById('troop-receipt-total-cards');
+        const troopReceiptTotalDonationsEl = document.getElementById('troop-receipt-total-donations');
+
+        // Update Scout Receipt Summary
+        if (receiptTotalAmountEl) receiptTotalAmountEl.textContent = `$${totalAmount.toFixed(2)}`;
+        if (receiptTotalCardsEl) receiptTotalCardsEl.textContent = totalCards;
+        if (receiptTotalDonationsEl) receiptTotalDonationsEl.textContent = totalDonations;
+        //document.getElementById('receipt-total-cards-amount').textContent = totalCardsamount;
+        //document.getElementById('receipt-total-donations-amount').textContent = totalDonations;
+        // Update Troop Receipt Summary
+        if (troopReceiptTotalAmountEl) troopReceiptTotalAmountEl.textContent = `$${totalAmount.toFixed(2)}`;
+        if (troopReceiptTotalCardsEl) troopReceiptTotalCardsEl.textContent = totalCards;
+        if (troopReceiptTotalDonationsEl) troopReceiptTotalDonationsEl.textContent = totalDonations;
+    }
+
+    async generateScoutReceiptHandler() {
+        const scoutNameInput = document.getElementById('receipt-scout-name');
+        const troopNameInput = document.getElementById('receipt-troop-name');
+        if (!scoutNameInput || !troopNameInput) {
+            console.warn('[RECEIPT] Scout receipt inputs not found');
+            await appleAlert('Receipt Error', 'Scout receipt form is not available right now. Please refresh and try again.');
+            return;
+        }
+
+        const scoutName = scoutNameInput.value;
+        if (!scoutName.trim()) {
+            alert('Please enter scout name');
+            return;
+        }
+
+        try {
+            const sales = this.sales || [];
+            const totalAmount = sales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+            const totalCards = sales.filter(s => s.type === 'card').reduce((sum, s) => {
+                const qty = Number(s.qty || 1);
+                return sum + (Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1);
+            }, 0);
+            const totalDonations = sales.filter(s => s.type === 'donation').length;
+
+            const receipt = receiptManager.generateScoutReceipt(
+                sales,
+                {
+                    scoutName: scoutNameInput.value,
+                    
+                },
+                {
+                    troopName: troopNameInput.value,
+                   
+                }
+            );
+
+            const savedReceipt = await receiptManager.saveReceipt(receipt);
+            alert(`Receipt #${savedReceipt.receiptNumber} generated successfully!`);
+            this.loadReceiptHistory();
+        } catch (error) {
+            console.error('Error generating receipt:', error);
+            alert('Error generating receipt. Please try again.');
+        }
+    }
+
+    async generateTroopReceiptHandler() {
+        const troopNameInput = document.getElementById('troop-receipt-name');
+        const troopNumberInput = document.getElementById('troop-receipt-number');
+        const troopTaxIdInput = document.getElementById('troop-receipt-tax-id');
+        if (!troopNameInput || !troopNumberInput || !troopTaxIdInput) {
+            console.warn('[RECEIPT] Troop receipt inputs not found');
+            await appleAlert('Receipt Error', 'Troop receipt form is not available right now. Please refresh and try again.');
+            return;
+        }
+
+        const troopName = troopNameInput.value;
+        if (!troopName.trim()) {
+            alert('Please enter troop name');
+            return;
+        }
+
+        try {
+            const sales = this.allSales || this.sales || [];
+            const totalAmount = sales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+            const totalCards = sales.filter(s => s.type === 'card').reduce((sum, s) => {
+                const qty = Number(s.qty || 1);
+                return sum + (Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1);
+            }, 0);
+            const totalDonations = sales.filter(s => s.type === 'donation').length;
+
+            const scoutBreakdown = [
+                {
+                    scoutName: currentUser.displayName || 'All Scouts',
+                    totalCards: totalCards,
+                    totalAmount: totalAmount
+                }
+            ];
+
+            const receipt = receiptManager.generateTroopReceipt(
+                sales,
+                {
+                    troopName: troopNameInput.value,
+                    troopNumber: troopNumberInput.value,
+                    taxExemptId: troopTaxIdInput.value
+                },
+                scoutBreakdown
+            );
+
+            const savedReceipt = await receiptManager.saveReceipt(receipt);
+            alert(`Troop Receipt #${savedReceipt.receiptNumber} generated successfully!`);
+            this.loadReceiptHistory();
+        } catch (error) {
+            console.error('Error generating troop receipt:', error);
+            alert('Error generating troop receipt. Please try again.');
+        }
+    }
+
+    showReceiptActions(receipt) {
+        const html = `
+            <div class="receipt-action-modal">
+                <h3>Receipt Generated Successfully!</h3>
+                <p>Receipt #${receipt.receiptNumber}</p>
+                 <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="receiptManager.printReceipt(${JSON.stringify(receipt).replace(/"/g, '&quot;')})">Print</button>
+                    <button class="btn btn-secondary" onclick="shareReceiptEmail('${receipt.id}')">Email</button>
+                    <button class="btn btn-secondary" onclick="shareReceiptLink('${receipt.id}')">Share Link</button>
+                    <button class="btn btn-secondary" onclick="shareReceiptQR('${receipt.id}')">QR Code</button>
+                </div> 
+            </div>
+        `;
+    }
+
+    async loadReceiptHistory() {
+        try {
+            const receipts = await receiptManager.getUserReceipts();
+            const historyDiv = document.getElementById('receipt-history');
+            if (!historyDiv) {
+                console.warn('[RECEIPT] Receipt history container not found');
+                return;
+            }
+
+            if (!receipts || receipts.length === 0) {
+                historyDiv.innerHTML = '<p class="text-muted">No receipts yet. Generate your first receipt above!</p>';
+                return;
+            }
+
+            // Sort by createdAt in descending order (newest first)
+            const sortedReceipts = receipts.sort((a, b) => {
+                const dateA = new Date(a.createdAt || a.date || 0).getTime();
+                const dateB = new Date(b.createdAt || b.date || 0).getTime();
+                return dateB - dateA;
+            });
+
+            console.log('[RECEIPT HISTORY] Displaying receipts:', sortedReceipts);
+
+            historyDiv.innerHTML = sortedReceipts.map(receipt => {
+                const displayDate = receipt.date || receipt.createdAt || new Date().toISOString();
+                const dateObj = new Date(displayDate);
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                
+                // Calculate card and donation amounts from sales if not already in receipt
+                const cardAmount = receipt.cardAmount !== undefined ? receipt.cardAmount : (receipt.sales || [])
+                    .filter(s => s.type === 'card')
+                    .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                const donationAmount = receipt.donationAmount !== undefined ? receipt.donationAmount : (receipt.sales || [])
+                    .filter(s => s.type === 'donation')
+                    .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                
+                return `
+                    <div class="receipt-item card" data-receipt-id="${receipt.id}">
+                        <div class="receipt-item-header">
+                            <strong>Receipt #${receipt.receiptNumber}</strong>
+                            <span class="receipt-type-badge">${receipt.type === 'scout' ? 'Scout' : 'Troop'}</span>
+                        </div>
+                        <div class="receipt-item-details">
+                            <p><strong>Date & Time:</strong> ${formattedDate}</p>
+                            ${receipt.scoutName ? `<p><strong>Scout:</strong> ${receipt.scoutName}</p>` : ''}
+                            <div class="receipt-summary-compact">
+                                <div class="receipt-summary-row">
+                                    <span class="receipt-summary-label">Total Cards Sold:</span>
+                                    <span class="receipt-summary-value">${receipt.totalCards || 0}  $ ${cardAmount.toFixed(2)}</span>
+                                </div>
+                                <div class="receipt-summary-row">
+                                    <span class="receipt-summary-label">Total Donations:</span>
+                                    <span class="receipt-summary-value">${receipt.totalDonations || 0}  $ ${donationAmount.toFixed(2)}</span>
+                                </div>
+                                <div class="receipt-summary-row receipt-summary-total">
+                                    <span class="receipt-summary-label">Total Amount:</span>
+                                    <span class="receipt-summary-value">$${Number(receipt.totalAmount || 0).toFixed(2)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="receipt-item-actions">
+                            <button class="btn btn-small btn-primary btn-icon-only btn-receipt-view" data-receipt-id="${receipt.id}" aria-label="View receipt" title="View receipt"><span class="receipt-action-icon" aria-hidden="true">&#128065;</span></button>
+                            <button class="btn btn-small btn-secondary btn-icon-only btn-receipt-print" data-receipt-id="${receipt.id}" aria-label="Print receipt" title="Print receipt"><span class="receipt-action-icon" aria-hidden="true">&#128438;</span></button>
+                            <button class="btn btn-small btn-secondary btn-icon-only btn-receipt-share" data-receipt-id="${receipt.id}" aria-label="Share receipt" title="Share receipt"><span class="receipt-action-icon" aria-hidden="true">&#128279;</span></button> 
+                            <button class="btn btn-small btn-danger btn-icon-only btn-receipt-delete" data-receipt-id="${receipt.id}" aria-label="Delete receipt" title="Delete receipt"><span class="receipt-action-icon" aria-hidden="true">&#128465;</span></button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Attach event listeners to buttons
+            this.attachReceiptButtonListeners(sortedReceipts);
+        } catch (error) {
+            console.error('Error loading receipt history:', error);
+            const historyDiv = document.getElementById('receipt-history');
+            if (historyDiv) {
+                historyDiv.innerHTML = '<p class="text-danger">Error loading receipts: ' + error.message + '</p>';
+            }
+        }
+    }
+
+    attachReceiptButtonListeners(receipts) {
+        const receiptMap = {};
+        receipts.forEach(r => receiptMap[r.id] = r);
+
+        // View button
+        document.querySelectorAll('.btn-receipt-view').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const receiptId = btn.getAttribute('data-receipt-id');
+                window.viewReceiptDetails(receiptId);
+            });
+        });
+
+        // Print button
+        document.querySelectorAll('.btn-receipt-print').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const receiptId = btn.getAttribute('data-receipt-id');
+                if (receiptMap[receiptId]) {
+                    receiptManager.printReceipt(receiptMap[receiptId]);
+                }
+            });
+        });
+
+        // Email button
+        document.querySelectorAll('.btn-receipt-email').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const receiptId = btn.getAttribute('data-receipt-id');
+                window.shareReceiptEmail(receiptId);
+            });
+        });
+
+        // Share button
+        document.querySelectorAll('.btn-receipt-share').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const receiptId = btn.getAttribute('data-receipt-id');
+                window.shareReceiptLink(receiptId);
+            });
+        });
+
+        // Delete button
+        document.querySelectorAll('.btn-receipt-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const receiptId = btn.getAttribute('data-receipt-id');
+                window.deleteReceiptHandler(receiptId);
+            });
+        });
+    }
+
+    // ==================== EARNINGS ====================
+
+    async loadEarningsData() {
+        try {
+            const sales = this.sales || [];
+
+            // Calculate donations and card sales
+            const donations = sales.filter(s => s.type === 'donation');
+            const cardSales = sales.filter(s => s.type === 'card');
+
+            const totalDonations = donations.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+            const totalCardCount = cardSales.reduce((sum, c) => {
+                const qty = Number(c.qty || 1);
+                return sum + (Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1);
+            }, 0);
+            const cardCommission = totalCardCount * 4.50;
+            const totalEarnings = totalDonations + cardCommission;
+
+            // Update summary section
+            document.getElementById('earnings-donations').textContent = `$${totalDonations.toFixed(2)}`;
+            document.getElementById('earnings-cards-count').textContent = totalCardCount;
+            document.getElementById('earnings-cards-amount').textContent = `$${cardCommission.toFixed(2)}`;
+            document.getElementById('earnings-total').textContent = `$${totalEarnings.toFixed(2)}`;
+
+            // Combine and sort all sales by date (newest first) for activity feed
+            const allItems = [];
+            donations.forEach(d => {
+                const createdDate = getSaleCreatedDate(d) || new Date(0);
+                allItems.push({
+                    date: createdDate,
+                    type: 'donation',
+                    title: d.customerName || 'Anonymous Donor',
+                    description: 'Donation',
+                    amount: Number(d.amount || 0)
+                });
+            });
+            cardSales.forEach(c => {
+                const qty = Number(c.qty || 1);
+                const commission = (Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1) * 4.50;
+                const createdDate = getSaleCreatedDate(c) || new Date(0);
+                allItems.push({
+                    date: createdDate,
+                    type: 'card',
+                    title: c.customerName || 'Anonymous Buyer',
+                    description: `${qty} card${qty !== 1 ? 's' : ''}`,
+                    amount: commission
+                });
+            });
+            allItems.sort((a, b) => b.date - a.date);
+
+            // Update transaction history
+            const historyContainer = document.getElementById('earnings-history');
+            if (allItems.length === 0) {
+                historyContainer.innerHTML = '<div class="earnings-empty">No transactions yet</div>';
+            } else {
+                historyContainer.innerHTML = allItems.map(item => `
+                    <div class="activity-item">
+                        <div class="activity-icon">${item.type === 'donation' ? '💝' : '💳'}</div>
+                        <div class="activity-info">
+                            <div class="activity-title">${item.title}</div>
+                            <div class="activity-meta">${item.description} · ${item.date.toLocaleString()}</div>
+                        </div>
+                        <div class="activity-amount">$${item.amount.toFixed(2)}</div>
+                    </div>
+                `).join('');
+            }
+
+            console.log('[EARNINGS] Loaded earnings data:', { totalDonations, totalCardCount, cardCommission, totalEarnings });
+        } catch (error) {
+            console.error('Error loading earnings data:', error);
+            document.getElementById('earnings-donations').textContent = '$0.00';
+            document.getElementById('earnings-total').textContent = '$0.00';
+        }
+    }
+
     // ==================== LOGOUT ====================
 
     setupLogout() {
@@ -7511,6 +8366,140 @@ class ScoutFundraiserApp {
         });
     }
 }
+
+// ==================== RECEIPT SHARING HELPERS ====================
+
+window.shareReceiptEmail = async function(receiptId) {
+    if (!receiptManager) {
+        alert('Receipt manager not initialized');
+        return;
+    }
+    const receipt = await receiptManager.getReceiptById(receiptId);
+    if (!receipt) {
+        alert('Receipt not found');
+        return;
+    }
+    const email = prompt('Enter email address to share receipt:', '');
+    if (!email) return;
+
+    try {
+        const receiptHTML = receiptManager.generateReceiptHTML(receipt);
+        const shareLink = receiptManager.generateShareLink(receiptId);
+        alert(`Receipt prepared. Share this link with the recipient:\n\n${shareLink}`);
+    } catch (error) {
+        console.error('Error preparing receipt email:', error);
+        alert('To email receipts, share this link instead:\n' + receiptManager.generateShareLink(receiptId));
+    }
+};
+
+window.shareReceiptLink = async function(receiptId) {
+    if (!receiptManager) {
+        alert('Receipt manager not initialized');
+        return;
+    }
+    const success = await receiptManager.shareViaLink(receiptId);
+    if (success) {
+        alert('Receipt link shared!');
+    }
+};
+
+window.shareReceiptQR = async function(receiptId) {
+    if (!receiptManager) {
+        alert('Receipt manager not initialized');
+        return;
+    }
+    const qrLink = receiptManager.generateShareLink(receiptId);
+    const qrHTML = `
+        <div style="text-align:center;padding:20px;">
+            <h3>Receipt QR Code</h3>
+            <div id="qr-code-receipt"></div>
+            <p style="margin-top:20px;">Scan this QR code to view receipt #${receiptId}</p>
+        </div>
+    `;
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+            ${qrHTML}
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Generate QR code
+    const qrCode = new QRCode(modal.querySelector('#qr-code-receipt'), {
+        text: qrLink,
+        width: 200,
+        height: 200
+    });
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+};
+
+window.deleteReceiptHandler = async function(receiptId) {
+    if (!confirm('Are you sure you want to delete this receipt?')) {
+        return;
+    }
+    try {
+        await receiptManager.deleteReceipt(receiptId);
+        alert('Receipt deleted successfully');
+        if (window.scoutApp) {
+            window.scoutApp.loadReceiptHistory();
+        }
+    } catch (error) {
+        console.error('Error deleting receipt:', error);
+        alert('Failed to delete receipt');
+    }
+};
+
+window.viewReceiptDetails = async function(receiptId) {
+    if (!receiptManager) {
+        alert('Receipt manager not initialized');
+        return;
+    }
+    try {
+        const receipt = await receiptManager.getReceiptById(receiptId);
+        if (!receipt) {
+            alert('Receipt not found');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'modal receipt-detail-modal';
+        modal.style.display = 'block';
+
+        const receiptHTML = receiptManager.generateReceiptHTML(receipt);
+
+        modal.innerHTML = `
+            <div class="modal-content receipt-modal-content">
+                <div class="modal-header">
+                    <h3>Receipt #${receipt.receiptNumber}</h3>
+                 
+                </div>
+                <div class="receipt-view-container">
+                    ${receiptHTML}
+                </div>
+               
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    } catch (error) {
+        console.error('Error viewing receipt:', error);
+        alert('Error loading receipt details');
+    }
+};
 
 // ==================== START APP ====================
 

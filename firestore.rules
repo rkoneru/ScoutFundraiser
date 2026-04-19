@@ -347,5 +347,22 @@ service cloud.firestore {
         allow update, delete: if isUnitLeaderOrAdmin(unitId);
       }
     }
+
+    // Receipts collection - allow scouts to create and read their own receipts
+    match /receipts/{receiptId} {
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow read: if isSignedIn() && (
+        // User can read their own receipts
+        resource.data.createdBy == request.auth.uid
+        // Unit members can read all unit receipts
+        || (userAccountExists(request.auth.uid)
+            && isMemberOfUnit(userAccount(request.auth.uid).data.unitId))
+      );
+
+      allow update, delete: if isSignedIn()
+        && resource.data.createdBy == request.auth.uid;
+    }
   }
 }

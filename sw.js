@@ -1,5 +1,5 @@
 // Service Worker for Scout Fundraiser PWA
-const CACHE_NAME = 'scoutfundraiser-v3';
+const CACHE_NAME = 'scoutfundraiser-v4';
 const urlsToCache = [
   './',
   './index.html',
