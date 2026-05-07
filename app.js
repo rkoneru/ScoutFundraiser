@@ -377,6 +377,29 @@ function filterAndSortSales(sales, filters = {}) {
         filtered = filtered.filter(s => s.paymentMethod === filters.paymentFilter);
     }
 
+    // Apply date range filter
+    if (filters.dateFrom || filters.dateTo) {
+        filtered = filtered.filter(s => {
+            if (!s.date) return false;
+
+            // Parse sale date - handle both date strings and Date objects
+            const saleDateObj = s.date instanceof Date ? s.date : new Date(s.date);
+            const saleDateStr = saleDateObj.toISOString().split('T')[0]; // Get YYYY-MM-DD
+
+            if (filters.dateFrom) {
+                const fromStr = filters.dateFrom.toISOString().split('T')[0];
+                if (saleDateStr < fromStr) return false;
+            }
+
+            if (filters.dateTo) {
+                const toStr = filters.dateTo.toISOString().split('T')[0];
+                if (saleDateStr > toStr) return false;
+            }
+
+            return true;
+        });
+    }
+
     // Sort by database created date-time (newest first)
     filtered.sort((a, b) => getSaleSortMs(b) - getSaleSortMs(a));
 
@@ -814,14 +837,34 @@ function getSaleCreatedDate(sale) {
     if (!sale) return null;
 
     const createdAt = sale.createdAt;
+
+    // Firestore Timestamp object (native)
     if (createdAt && typeof createdAt.toDate === 'function') {
         return createdAt.toDate();
     }
 
+    // Firestore-like plain object shapes from serialization (seconds + nanoseconds)
+    if (createdAt && typeof createdAt === 'object') {
+        const seconds = Number(createdAt.seconds ?? createdAt._seconds);
+        const nanoseconds = Number(createdAt.nanoseconds ?? createdAt._nanoseconds ?? 0);
+        if (Number.isFinite(seconds)) {
+            return new Date((seconds * 1000) + Math.floor((Number.isFinite(nanoseconds) ? nanoseconds : 0) / 1000000));
+        }
+    }
+
+    // ISO or epoch-like createdAt
     if (createdAt) {
         const createdDate = new Date(createdAt);
         if (!Number.isNaN(createdDate.getTime())) {
             return createdDate;
+        }
+    }
+
+    // Client-side creation timestamp fallback (for reliability when serverTimestamp is delayed)
+    if (sale.createdAtClient) {
+        const createdClientDate = new Date(sale.createdAtClient);
+        if (!Number.isNaN(createdClientDate.getTime())) {
+            return createdClientDate;
         }
     }
 
@@ -3559,6 +3602,9 @@ class ScoutFundraiserApp {
         search: null,
         filterType: null,
         filterPayment: null,
+        filterDateFrom: null,
+        filterDateTo: null,
+        clearFilters: null,
         listClick: null,
         debouncedRender: null
     };
@@ -3568,6 +3614,9 @@ class ScoutFundraiserApp {
         const searchEl = document.getElementById('dash-sales-search');
         const typeEl = document.getElementById('dash-sales-filter-type');
         const paymentEl = document.getElementById('dash-sales-filter-payment');
+        const dateFromEl = document.getElementById('dash-sales-filter-date-from');
+        const dateToEl = document.getElementById('dash-sales-filter-date-to');
+        const clearEl = document.getElementById('dash-sales-clear-filters');
         const listEl = document.getElementById('dash-sales-list');
 
         if (searchEl && this.dashboardListeners.debouncedRender) {
@@ -3581,6 +3630,17 @@ class ScoutFundraiserApp {
         if (paymentEl && this.dashboardListeners.debouncedRender) {
             paymentEl.removeEventListener('input', this.dashboardListeners.debouncedRender);
             paymentEl.removeEventListener('change', this.dashboardListeners.debouncedRender);
+        }
+        if (dateFromEl && this.dashboardListeners.debouncedRender) {
+            dateFromEl.removeEventListener('input', this.dashboardListeners.debouncedRender);
+            dateFromEl.removeEventListener('change', this.dashboardListeners.debouncedRender);
+        }
+        if (dateToEl && this.dashboardListeners.debouncedRender) {
+            dateToEl.removeEventListener('input', this.dashboardListeners.debouncedRender);
+            dateToEl.removeEventListener('change', this.dashboardListeners.debouncedRender);
+        }
+        if (clearEl && this.dashboardListeners.clearFilters) {
+            clearEl.removeEventListener('click', this.dashboardListeners.clearFilters);
         }
         if (listEl && this.dashboardListeners.listClick) {
             listEl.removeEventListener('click', this.dashboardListeners.listClick);
@@ -3597,7 +3657,17 @@ class ScoutFundraiserApp {
             document.getElementById('dash-sales-search').addEventListener(evt, this.dashboardListeners.debouncedRender);
             document.getElementById('dash-sales-filter-type').addEventListener(evt, this.dashboardListeners.debouncedRender);
             document.getElementById('dash-sales-filter-payment').addEventListener(evt, this.dashboardListeners.debouncedRender);
+            document.getElementById('dash-sales-filter-date-from').addEventListener(evt, this.dashboardListeners.debouncedRender);
+            document.getElementById('dash-sales-filter-date-to').addEventListener(evt, this.dashboardListeners.debouncedRender);
         });
+
+        // Clear filters button listener
+        this.dashboardListeners.clearFilters = () => {
+            document.getElementById('dash-sales-filter-date-from').value = '';
+            document.getElementById('dash-sales-filter-date-to').value = '';
+            this.renderDashTransactions();
+        };
+        document.getElementById('dash-sales-clear-filters').addEventListener('click', this.dashboardListeners.clearFilters);
 
         // Click delegation for dashboard sales list
         this.dashboardListeners.listClick = (e) => {
@@ -3609,12 +3679,37 @@ class ScoutFundraiserApp {
         document.getElementById('dash-sales-list').addEventListener('click', this.dashboardListeners.listClick);
 
         this.setupAnalyticsTabs();
+        this.setupExportTabs();
+        this.setupTransactionsMinimize();
     }
 
     setupAnalyticsTabs() {
         // Tab switching for mobile dashboard
         const tabBtns = document.querySelectorAll('.analytics-tab-btn');
         const tabContents = document.querySelectorAll('.analytics-tab-content');
+        const minimizeBtn = document.getElementById('analytics-minimize-toggle');
+        const minimizeLabel = minimizeBtn ? minimizeBtn.querySelector('.analytics-minimize-label') : null;
+        const minimizeIcon = minimizeBtn ? minimizeBtn.querySelector('.analytics-minimize-icon') : null;
+
+        const getActiveTab = () => document.querySelector('.analytics-tab-content.active');
+        const getActiveTabBody = () => {
+            const activeTab = getActiveTab();
+            return activeTab ? activeTab.querySelector('.analytics-tab-body') : null;
+        };
+
+        const syncMinimizeButton = () => {
+            if (!minimizeBtn) return;
+            const activeTab = getActiveTab();
+            const activeBody = getActiveTabBody();
+            const isCollapsed = activeTab ? activeTab.classList.contains('collapsed') : false;
+            const labelText = isCollapsed ? 'Expand' : 'Minimize';
+            const iconText = isCollapsed ? '▸' : '▾';
+            if (minimizeLabel) minimizeLabel.textContent = labelText;
+            if (minimizeIcon) minimizeIcon.textContent = iconText;
+            minimizeBtn.setAttribute('aria-expanded', String(!isCollapsed));
+            minimizeBtn.setAttribute('aria-label', `${labelText} current analytics section`);
+            minimizeBtn.disabled = !activeBody;
+        };
 
         tabBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -3628,8 +3723,392 @@ class ScoutFundraiserApp {
                 btn.classList.add('active');
                 const activeTab = document.getElementById(`tab-${tabName}`);
                 if (activeTab) activeTab.classList.add('active');
+                syncMinimizeButton();
             });
         });
+
+        if (minimizeBtn && minimizeBtn.dataset.minimizeBound !== 'true') {
+            minimizeBtn.dataset.minimizeBound = 'true';
+            minimizeBtn.addEventListener('click', () => {
+                const activeTab = getActiveTab();
+                const activeBody = getActiveTabBody();
+                if (!activeTab) return;
+
+                const isCollapsed = activeTab.classList.toggle('collapsed');
+                if (activeBody) {
+                    activeBody.style.display = isCollapsed ? 'none' : '';
+                }
+                syncMinimizeButton();
+            });
+        }
+
+        syncMinimizeButton();
+    }
+
+    setupExportTabs() {
+        // Initialize each export card independently so duplicate IDs across pages don't break handlers.
+        // Match any card that contains at least one export button.
+        const exportCards = Array.from(document.querySelectorAll('.card')).filter(card => {
+            return card.querySelector('#export-complete-btn, #export-summary-btn, #generate-receipt-btn');
+        });
+
+        exportCards.forEach(card => {
+            const exportTabBtns = card.querySelectorAll('.export-tab-btn');
+            const exportTabContents = card.querySelectorAll('.export-tab-content');
+
+            exportTabBtns.forEach(btn => {
+                if (btn.dataset.exportTabBound === 'true') return;
+                btn.dataset.exportTabBound = 'true';
+
+                btn.addEventListener('click', () => {
+                    const tabName = btn.getAttribute('data-tab');
+                    exportTabBtns.forEach(b => b.classList.remove('active'));
+                    exportTabContents.forEach(c => c.classList.remove('active'));
+
+                    btn.classList.add('active');
+                    const activeTab = card.querySelector(`#tab-export-${tabName}`);
+                    if (activeTab) activeTab.classList.add('active');
+                });
+            });
+
+            const exportCompleteBtn = card.querySelector('#export-complete-btn');
+            const exportSummaryBtn = card.querySelector('#export-summary-btn');
+            const generateReceiptBtn = card.querySelector('#generate-receipt-btn');
+            const printReceiptBtn = card.querySelector('#print-receipt-btn');
+
+            if (exportCompleteBtn && exportCompleteBtn.dataset.exportActionBound !== 'true') {
+                exportCompleteBtn.dataset.exportActionBound = 'true';
+                exportCompleteBtn.addEventListener('click', () => this.exportCompleteData());
+            }
+
+            if (exportSummaryBtn && exportSummaryBtn.dataset.exportActionBound !== 'true') {
+                exportSummaryBtn.dataset.exportActionBound = 'true';
+                exportSummaryBtn.addEventListener('click', () => this.exportSummaryReport());
+            }
+
+            if (generateReceiptBtn && generateReceiptBtn.dataset.exportActionBound !== 'true') {
+                generateReceiptBtn.dataset.exportActionBound = 'true';
+                generateReceiptBtn.addEventListener('click', () => this.generateReceiptView());
+            }
+
+            if (printReceiptBtn && printReceiptBtn.dataset.exportActionBound !== 'true') {
+                printReceiptBtn.dataset.exportActionBound = 'true';
+                printReceiptBtn.addEventListener('click', () => window.print());
+            }
+        });
+    }
+
+    setupTransactionsMinimize() {
+        // Setup minimize buttons for transactions sections
+        const minimizeButtons = [
+            { btn: document.getElementById('dash-transactions-minimize'), content: document.getElementById('dash-transactions-content') },
+            { btn: document.getElementById('sales-transactions-minimize'), content: document.getElementById('sales-transactions-content') },
+            { btn: document.getElementById('receipt-history-minimize'), content: document.getElementById('receipt-history-content') },
+            { btn: document.getElementById('earnings-transactions-minimize'), content: document.getElementById('earnings-transactions-content') },
+            { btn: document.getElementById('qr-payment-minimize'), content: document.getElementById('qr-payment-content') },
+            { btn: document.getElementById('donation-qr-minimize'), content: document.getElementById('donation-qr-content') }
+        ];
+
+        minimizeButtons.forEach(({ btn, content }) => {
+            if (!btn || !content) return;
+
+            const label = btn.querySelector('.transactions-minimize-label');
+            const icon = btn.querySelector('.transactions-minimize-icon');
+
+            const updateButton = () => {
+                const isCollapsed = content.classList.contains('collapsed');
+                const labelText = isCollapsed ? 'Expand' : 'Minimize';
+                const iconText = isCollapsed ? '▸' : '▾';
+                if (label) label.textContent = labelText;
+                if (icon) icon.textContent = iconText;
+                btn.setAttribute('aria-expanded', String(!isCollapsed));
+                btn.setAttribute('aria-label', `${labelText} transactions section`);
+            };
+
+            if (btn.dataset.transactionsMinimizeBound !== 'true') {
+                btn.dataset.transactionsMinimizeBound = 'true';
+                btn.addEventListener('click', () => {
+                    content.classList.toggle('collapsed');
+                    updateButton();
+                });
+            }
+
+            updateButton();
+        });
+    }
+
+    exportCompleteData() {
+        try {
+            if (!this.sales || this.sales.length === 0) {
+                alert('No transaction data to export');
+                return;
+            }
+
+            // Prepare data for export
+            const exportData = this.sales.map(sale => {
+                try {
+                    const createdDate = getSaleCreatedDate(sale);
+                    const formattedDate = createdDate ? createdDate.toLocaleString() : '';
+                    const amount = Number(sale.amount || 0);
+
+                    return {
+                        'Date': formattedDate,
+                        'Scout Name': sale.scoutName || '',
+                        'Customer Name': sale.customerName || '',
+                        'Type': sale.type === 'card' ? 'Scout Card' : 'Donation',
+                        'Quantity': sale.qty || 1,
+                        'Amount': '$' + amount.toFixed(2),
+                        'Payment Method': sale.paymentMethod || 'Cash',
+                        'Notes': sale.notes || ''
+                    };
+                } catch (err) {
+                    console.error('Error mapping sale:', err, sale);
+                    return null;
+                }
+            }).filter(item => item !== null);
+
+            if (exportData.length === 0) {
+                alert('No valid transaction data to export');
+                return;
+            }
+
+            // Convert to CSV
+            const csvContent = this.jsonToCSV(exportData);
+
+            // Generate filename with current date
+            const today = new Date();
+            const dateStr = today.toISOString().split('T')[0];
+            const fileName = `ScoutFundraiser_Transactions_${dateStr}.csv`;
+
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            console.log('Export successful:', fileName);
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('Error exporting transactions: ' + error.message);
+        }
+    }
+
+    jsonToCSV(data) {
+        if (!data || data.length === 0) return '';
+        const headers = Object.keys(data[0]);
+        const csv = [headers.join(',')];
+        data.forEach(row => {
+            const values = headers.map(header => {
+                const val = row[header] || '';
+                const escaped = String(val).replace(/"/g, '""');
+                return escaped.includes(',') || escaped.includes('"') || escaped.includes('\n') ? `"${escaped}"` : escaped;
+            });
+            csv.push(values.join(','));
+        });
+        return csv.join('\n');
+    }
+
+    exportSummaryReport() {
+        // Create summary data
+        const summaryData = [];
+
+        // Overall summary
+        let totalCards = 0, totalCardAmount = 0, totalDonations = 0, totalDonationAmount = 0;
+
+        this.sales.forEach(sale => {
+            const amount = Number(sale.amount) || 0;
+            if (sale.type === 'card') {
+                const qty = Number(sale.qty || 1);
+                totalCards += Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                totalCardAmount += amount;
+            } else if (sale.type === 'donation') {
+                totalDonations++;
+                totalDonationAmount += amount;
+            }
+        });
+
+        summaryData.push({
+            'Report': 'Overall Summary',
+            'Cards (Count)': totalCards,
+            'Cards (Amount)': '$' + totalCardAmount.toFixed(2),
+            'Donations (Count)': totalDonations,
+            'Donations (Amount)': '$' + totalDonationAmount.toFixed(2),
+            'Total Amount': '$' + (totalCardAmount + totalDonationAmount).toFixed(2)
+        });
+
+        // Sheet 2: By Date
+        const dateBreakdown = {};
+        this.sales.forEach(sale => {
+            const year = sale.createdAt?.toDate ? sale.createdAt.toDate().getFullYear() : new Date(sale.createdAt || sale.date).getFullYear();
+            const month = (sale.createdAt?.toDate ? sale.createdAt.toDate().getMonth() : new Date(sale.createdAt || sale.date).getMonth()) + 1;
+            const day = sale.createdAt?.toDate ? sale.createdAt.toDate().getDate() : new Date(sale.createdAt || sale.date).getDate();
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+            if (!dateBreakdown[dateStr]) {
+                dateBreakdown[dateStr] = { cardsCount: 0, cardsAmount: 0, donationsCount: 0, donationsAmount: 0 };
+            }
+
+            const amount = Number(sale.amount) || 0;
+            if (sale.type === 'card') {
+                const qty = Number(sale.qty || 1);
+                dateBreakdown[dateStr].cardsCount += Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                dateBreakdown[dateStr].cardsAmount += amount;
+            } else if (sale.type === 'donation') {
+                dateBreakdown[dateStr].donationsCount++;
+                dateBreakdown[dateStr].donationsAmount += amount;
+            }
+        });
+
+        const dateData = Object.entries(dateBreakdown)
+            .sort((a, b) => b[0].localeCompare(a[0]))
+            .map(([date, data]) => ({
+                'Date': date,
+                'Cards (Count)': data.cardsCount,
+                'Cards (Amount)': '$' + data.cardsAmount.toFixed(2),
+                'Donations (Count)': data.donationsCount,
+                'Donations (Amount)': '$' + data.donationsAmount.toFixed(2)
+            }));
+
+        // Sheet 3: By Payment Method
+        const paymentBreakdown = {
+            'Cash': { amount: 0, count: 0 },
+            'CreditCard': { amount: 0, count: 0 },
+            'Venmo': { amount: 0, count: 0 },
+            'CashApp': { amount: 0, count: 0 },
+            'Zelle': { amount: 0, count: 0 },
+            'ApplePay': { amount: 0, count: 0 }
+        };
+
+        this.sales.forEach(sale => {
+            const method = sale.paymentMethod || 'Cash';
+            const key = Object.keys(paymentBreakdown).find(k => k.toLowerCase() === method.toLowerCase()) || 'Cash';
+            paymentBreakdown[key].amount += Number(sale.amount) || 0;
+            paymentBreakdown[key].count++;
+        });
+
+        const paymentData = Object.entries(paymentBreakdown)
+            .map(([method, data]) => ({
+                'Payment Method': method,
+                'Count': data.count,
+                'Amount': '$' + data.amount.toFixed(2)
+            }));
+
+        // Combine all data for CSV
+        const combinedData = [];
+        combinedData.push({ 'Type': 'OVERALL SUMMARY' });
+        combinedData.push(...summaryData);
+        combinedData.push({});
+        combinedData.push({ 'Type': 'BY DATE' });
+        combinedData.push(...dateData);
+        combinedData.push({});
+        combinedData.push({ 'Type': 'BY PAYMENT METHOD' });
+        combinedData.push(...paymentData);
+
+        // Convert to CSV
+        const csvContent = this.jsonToCSV(combinedData);
+
+        // Generate filename
+        const today = new Date();
+        const dateStr = today.toISOString().split('T')[0];
+        const fileName = `ScoutFundraiser_Summary_${dateStr}.csv`;
+
+        // Download CSV
+        try {
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            console.log('Summary export successful:', fileName);
+        } catch (error) {
+            console.error('Summary export error:', error);
+            alert('Error exporting summary: ' + error.message);
+        }
+    }
+
+    generateReceiptView() {
+        if (!this.sales || this.sales.length === 0) {
+            alert('No transaction data to display');
+            return;
+        }
+
+        const container = document.getElementById('receipt-container');
+        const generateBtn = document.getElementById('generate-receipt-btn');
+        const printBtn = document.getElementById('print-receipt-btn');
+
+        let totalAmount = 0;
+        let totalCards = 0;
+        let totalDonations = 0;
+
+        // Calculate totals
+        this.sales.forEach(sale => {
+            const amount = Number(sale.amount) || 0;
+            totalAmount += amount;
+            if (sale.type === 'card') {
+                const qty = Number(sale.qty || 1);
+                totalCards += Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+            } else {
+                totalDonations++;
+            }
+        });
+
+        // Build receipt HTML
+        let html = `
+            <div class="receipt-header">
+                <h2>Troop 242</h2>
+                <p>Scout Fundraiser Receipt</p>
+                <p>Generated: ${new Date().toLocaleString()}</p>
+            </div>
+
+            <div class="receipt-transactions">
+        `;
+
+        // Sort transactions by date (newest first)
+        const sortedSales = [...this.sales].sort((a, b) => getSaleSortMs(b) - getSaleSortMs(a));
+
+        sortedSales.forEach(sale => {
+            const createdDate = getSaleCreatedDate(sale);
+            const dateStr = createdDate ? createdDate.toLocaleDateString() : 'Unknown';
+            const typeLabel = sale.type === 'card' ? 'Scout Card' : 'Donation';
+            const qty = sale.qty || 1;
+            const amount = formatMoney(sale.amount || 0);
+
+            html += `
+                <div class="receipt-item">
+                    <div class="receipt-item-left">
+                        <div class="receipt-item-name">${escapeHTML(sale.scoutName || 'Scout')}</div>
+                        <div class="receipt-item-type">${typeLabel}${sale.type === 'card' ? ` (Qty: ${qty})` : ''}</div>
+                        <div class="receipt-item-date">${dateStr}</div>
+                    </div>
+                    <div class="receipt-item-amount">${amount}</div>
+                </div>
+            `;
+        });
+
+        html += `
+            </div>
+
+            <div class="receipt-total">
+                <span>TOTAL</span>
+                <span>${formatMoney(totalAmount)}</span>
+            </div>
+
+            <div class="receipt-footer">
+                <p><strong>Summary</strong></p>
+                <p>${totalCards} Scout Card${totalCards !== 1 ? 's' : ''} | ${totalDonations} Donation${totalDonations !== 1 ? 's' : ''}</p>
+                <p>Thank you for your support!</p>
+            </div>
+        `;
+
+        container.innerHTML = html;
+        container.style.display = 'block';
+        generateBtn.style.display = 'none';
+        printBtn.style.display = 'inline-flex';
     }
 
     // OPTIMIZATION: Cache for smart render detection (Dashboard Phase 1)
@@ -3776,6 +4255,7 @@ class ScoutFundraiserApp {
         // Update analytics breakdowns
         this.updatePaymentMethodBreakdown();
         this.updateTransactionTypeBreakdown();
+        this.updateDateBreakdown();
 
         this.renderDashTransactions();
 
@@ -3859,6 +4339,108 @@ class ScoutFundraiserApp {
         donationAmountEl.textContent = formatMoney(donationAmount);
         donationCountEl.textContent = donationCount + (donationCount === 1 ? ' donation' : ' donations');
         donationPercentEl.textContent = donationPercent.toFixed(1) + '%';
+    }
+
+    updateDateBreakdown() {
+        const tbody = document.getElementById('date-breakdown-details');
+        console.log('updateDateBreakdown called, tbody found:', !!tbody);
+        console.log('this.sales:', this.sales ? this.sales.length + ' items' : 'null');
+
+        if (!tbody) {
+            console.warn('date-breakdown-details element not found');
+            return;
+        }
+
+        const dateBreakdown = {};
+
+        // Group sales by date
+        if (!this.sales || this.sales.length === 0) {
+            console.log('No sales data available');
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No transactions</td></tr>';
+            return;
+        }
+
+        this.sales.forEach(sale => {
+            try {
+                let saleDate = 'Unknown';
+
+                // Use the same date extraction logic as the rest of the app
+                const createdDate = getSaleCreatedDate(sale);
+                if (createdDate && createdDate instanceof Date && !isNaN(createdDate.getTime())) {
+                    // Use local date, not UTC - format as YYYY-MM-DD
+                    const year = createdDate.getFullYear();
+                    const month = String(createdDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(createdDate.getDate()).padStart(2, '0');
+                    saleDate = `${year}-${month}-${day}`;
+                }
+
+                if (!dateBreakdown[saleDate]) {
+                    dateBreakdown[saleDate] = {
+                        cardsCount: 0,
+                        cardsAmount: 0,
+                        donationsCount: 0,
+                        donationsAmount: 0
+                    };
+                }
+
+                const amount = Number(sale.amount) || 0;
+                if (sale.type === 'card') {
+                    const qty = Number(sale.qty || 1);
+                    dateBreakdown[saleDate].cardsCount += Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                    dateBreakdown[saleDate].cardsAmount += amount;
+                } else if (sale.type === 'donation') {
+                    dateBreakdown[saleDate].donationsCount++;
+                    dateBreakdown[saleDate].donationsAmount += amount;
+                }
+            } catch (e) {
+                console.warn('Error processing sale date:', e);
+            }
+        });
+
+        // Sort dates in descending order (newest first)
+        const sortedDates = Object.keys(dateBreakdown).sort((a, b) => {
+            if (a === 'Unknown') return 1;
+            if (b === 'Unknown') return -1;
+            return b.localeCompare(a);
+        });
+
+        console.log('Date breakdown:', dateBreakdown);
+        console.log('Sorted dates:', sortedDates);
+
+        if (sortedDates.length === 0) {
+            console.log('No dates found in breakdown');
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No transactions</td></tr>';
+            return;
+        }
+
+        console.log('Building table for', sortedDates.length, 'dates');
+        let html = '';
+        sortedDates.forEach(date => {
+            const data = dateBreakdown[date];
+            let formattedDate = date;
+
+            if (date !== 'Unknown' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                try {
+                    const [y, m, d] = date.split('-').map(Number);
+                    const dateObj = new Date(y, m - 1, d);
+                    formattedDate = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                } catch (e) {
+                    formattedDate = date;
+                }
+            }
+
+            html += `<tr>
+                <td><strong>${escapeHTML(formattedDate)}</strong></td>
+                <td>${data.cardsCount}</td>
+                <td>${formatMoney(data.cardsAmount)}</td>
+                <td>${data.donationsCount}</td>
+                <td>${formatMoney(data.donationsAmount)}</td>
+            </tr>`;
+        });
+
+        console.log('Setting innerHTML with', html.length, 'characters');
+        tbody.innerHTML = html;
+        console.log('Date breakdown updated');
     }
 
     // ==================== SUMMARY PAGE ====================
@@ -3968,12 +4550,16 @@ class ScoutFundraiserApp {
         const searchTerm = (document.getElementById('dash-sales-search').value || '').toLowerCase();
         const typeFilter = document.getElementById('dash-sales-filter-type').value;
         const paymentFilter = document.getElementById('dash-sales-filter-payment').value;
+        const dateFromStr = document.getElementById('dash-sales-filter-date-from').value;
+        const dateToStr = document.getElementById('dash-sales-filter-date-to').value;
 
         // Check if filters or data changed
         const changed =
             this.dashTransactionsCache.lastSearchTerm !== searchTerm ||
             this.dashTransactionsCache.lastTypeFilter !== typeFilter ||
             this.dashTransactionsCache.lastPaymentFilter !== paymentFilter ||
+            this.dashTransactionsCache.lastDateFromStr !== dateFromStr ||
+            this.dashTransactionsCache.lastDateToStr !== dateToStr ||
             this.dashTransactionsCache.lastSalesCount !== this.sales.length;
 
         return changed;
@@ -3983,17 +4569,26 @@ class ScoutFundraiserApp {
         const searchTerm = (document.getElementById('dash-sales-search').value || '').toLowerCase();
         const typeFilter = document.getElementById('dash-sales-filter-type').value;
         const paymentFilter = document.getElementById('dash-sales-filter-payment').value;
+        const dateFromStr = document.getElementById('dash-sales-filter-date-from').value;
+        const dateToStr = document.getElementById('dash-sales-filter-date-to').value;
+
+        const dateFrom = dateFromStr ? new Date(dateFromStr) : null;
+        const dateTo = dateToStr ? new Date(dateToStr) : null;
 
         const filtered = filterAndSortSales(this.sales, {
             searchTerm,
             typeFilter,
-            paymentFilter
+            paymentFilter,
+            dateFrom,
+            dateTo
         });
 
         this.dashTransactionsCache = {
             lastSearchTerm: searchTerm,
             lastTypeFilter: typeFilter,
             lastPaymentFilter: paymentFilter,
+            lastDateFromStr: dateFromStr,
+            lastDateToStr: dateToStr,
             lastSalesCount: this.sales.length,
             lastRenderedCount: filtered.length
         };
@@ -4009,11 +4604,18 @@ class ScoutFundraiserApp {
         const searchTerm = (document.getElementById('dash-sales-search').value || '').toLowerCase();
         const typeFilter = document.getElementById('dash-sales-filter-type').value;
         const paymentFilter = document.getElementById('dash-sales-filter-payment').value;
+        const dateFromStr = document.getElementById('dash-sales-filter-date-from').value;
+        const dateToStr = document.getElementById('dash-sales-filter-date-to').value;
+
+        const dateFrom = dateFromStr ? new Date(dateFromStr) : null;
+        const dateTo = dateToStr ? new Date(dateToStr) : null;
 
         const filtered = filterAndSortSales(this.sales, {
             searchTerm,
             typeFilter,
-            paymentFilter
+            paymentFilter,
+            dateFrom,
+            dateTo
         });
 
         const container = document.getElementById('dash-sales-list');
@@ -4123,6 +4725,9 @@ class ScoutFundraiserApp {
         };
         document.getElementById('sales-list').addEventListener('click', clickHandler);
         this.salesListeners.clickHandler = clickHandler;
+
+        // Setup export functionality on sales page
+        this.setupExportTabs();
     }
 
     populateSalesScoutFilter() {
@@ -4170,36 +4775,16 @@ class ScoutFundraiserApp {
         if (!sale) return;
 
         const typeLabel = sale.type === 'card' ? 'Scout Card' : 'Donation';
-
-        // Firestore Timestamp object
         const typeClass = sale.type === 'card' ? 'card-sale' : 'donation';
 
         const container = document.getElementById('sale-detail');
         container.innerHTML = `
-        // Firestore-like plain object shapes from serialization
-        if (createdAt && typeof createdAt === 'object') {
-            const seconds = Number(createdAt.seconds ?? createdAt._seconds);
-            const nanoseconds = Number(createdAt.nanoseconds ?? createdAt._nanoseconds ?? 0);
-            if (Number.isFinite(seconds)) {
-                return new Date((seconds * 1000) + Math.floor((Number.isFinite(nanoseconds) ? nanoseconds : 0) / 1000000));
-            }
-        }
-
-        // ISO or epoch-like createdAt
             <h3>Sale Details</h3>
             <div style="margin: 1rem 0;">
                 <div class="sale-badges" style="justify-content: flex-start; margin-bottom: 1rem;">
                     <span class="sale-type-badge ${typeClass}">${typeLabel}</span>
                     <span class="payment-badge">${escapeHTML(sale.paymentMethod)}</span>
                 </div>
-
-        // Client-side creation timestamp fallback (for reliability when serverTimestamp is delayed)
-        if (sale.createdAtClient) {
-            const createdClientDate = new Date(sale.createdAtClient);
-            if (!Number.isNaN(createdClientDate.getTime())) {
-                return createdClientDate;
-            }
-        }
                 <p><strong>Amount:</strong> ${formatMoney(sale.amount)}</p>
                 <p><strong>Customer:</strong> ${escapeHTML(sale.customerName)}</p>
                 <p><strong>Date:</strong> ${formatSaleDateTime(sale)}</p>
@@ -7924,6 +8509,9 @@ class ScoutFundraiserApp {
         this.updateReceiptSummaryStats();
 
         this.loadReceiptHistory();
+
+        // Setup export functionality on receipts page
+        this.setupExportTabs();
     }
 
     async prepopulateReceiptForms() {
@@ -8008,6 +8596,7 @@ class ScoutFundraiserApp {
     async generateScoutReceiptHandler() {
         const scoutNameInput = document.getElementById('receipt-scout-name');
         const troopNameInput = document.getElementById('receipt-troop-name');
+        const cardsTakenInput = document.getElementById('receipt-cards-taken');
         if (!scoutNameInput || !troopNameInput) {
             console.warn('[RECEIPT] Scout receipt inputs not found');
             await appleAlert('Receipt Error', 'Scout receipt form is not available right now. Please refresh and try again.');
@@ -8033,11 +8622,10 @@ class ScoutFundraiserApp {
                 sales,
                 {
                     scoutName: scoutNameInput.value,
-                    
+                    cardsTakenFromTroop: cardsTakenInput ? Number(cardsTakenInput.value) || 0 : 0,
                 },
                 {
                     troopName: troopNameInput.value,
-                   
                 }
             );
 
@@ -8187,7 +8775,8 @@ class ScoutFundraiserApp {
                         <div class="receipt-item-actions">
                             <button class="btn btn-small btn-primary btn-icon-only btn-receipt-view" data-receipt-id="${receipt.id}" aria-label="View receipt" title="View receipt"><span class="receipt-action-icon" aria-hidden="true">&#128065;</span></button>
                             <button class="btn btn-small btn-secondary btn-icon-only btn-receipt-print" data-receipt-id="${receipt.id}" aria-label="Print receipt" title="Print receipt"><span class="receipt-action-icon" aria-hidden="true">&#128438;</span></button>
-                            <button class="btn btn-small btn-secondary btn-icon-only btn-receipt-share" data-receipt-id="${receipt.id}" aria-label="Share receipt" title="Share receipt"><span class="receipt-action-icon" aria-hidden="true">&#128279;</span></button> 
+                            <button class="btn btn-small btn-secondary btn-icon-only btn-receipt-pdf" data-receipt-id="${receipt.id}" aria-label="Download PDF" title="Download Report"><span class="receipt-action-icon" aria-hidden="true">&#10515;</span></button>
+                            <button class="btn btn-small btn-secondary btn-icon-only btn-receipt-share" data-receipt-id="${receipt.id}" aria-label="Share receipt" title="Share receipt"><span class="receipt-action-icon" aria-hidden="true">&#128279;</span></button>
                             <button class="btn btn-small btn-danger btn-icon-only btn-receipt-delete" data-receipt-id="${receipt.id}" aria-label="Delete receipt" title="Delete receipt"><span class="receipt-action-icon" aria-hidden="true">&#128465;</span></button>
                         </div>
                     </div>
@@ -8227,6 +8816,16 @@ class ScoutFundraiserApp {
             });
         });
 
+        // PDF Download button
+        document.querySelectorAll('.btn-receipt-pdf').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const receiptId = btn.getAttribute('data-receipt-id');
+                if (receiptMap[receiptId]) {
+                    receiptManager.downloadReceiptPDF(receiptMap[receiptId]);
+                }
+            });
+        });
+
         // Email button
         document.querySelectorAll('.btn-receipt-email').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -8252,7 +8851,223 @@ class ScoutFundraiserApp {
         });
     }
 
+   
+    exportReceiptAsExcel(receipt) {
+        if (!receipt) return;
+
+        if (!window.XLSX) {
+            alert('Excel export library is still loading. Please wait a moment and try again.');
+            return;
+        }
+
+        const XLSX = window.XLSX;
+        const wb = XLSX.utils.book_new();
+
+        // ============ TAB 1: SUMMARY ============
+        const summaryData = [
+            { 'Receipt Summary': '' },
+            { 'Receipt Number': receipt.receiptNumber || 'N/A' },
+            { 'Type': receipt.type === 'scout' ? 'Scout Receipt' : 'Troop Receipt' },
+            { 'Scout Name': receipt.scoutName || '' },
+            { 'Troop Name': receipt.troopName || '' },
+            { 'Date': receipt.date || receipt.createdAt || new Date().toLocaleString() },
+            {},
+            { 'Total Cards Sold': receipt.totalCards || 0 },
+            { 'Cards Amount': '$' + (Number(receipt.cardAmount || 0).toFixed(2)) },
+            { 'Total Donations': receipt.totalDonations || 0 },
+            { 'Donations Amount': '$' + (Number(receipt.donationAmount || 0).toFixed(2)) },
+            {},
+            { 'TOTAL AMOUNT': '$' + (Number(receipt.totalAmount || 0).toFixed(2)) }
+        ];
+
+        const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+        wsSummary['!cols'] = [{ wch: 25 }, { wch: 20 }];
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+        // ============ TAB 2: RECEIPT ============
+        const receiptDetailData = [];
+        receiptDetailData.push({ 'Receipt #': receipt.receiptNumber || 'N/A' });
+        receiptDetailData.push({ 'Date & Time': receipt.date || receipt.createdAt || new Date().toLocaleString() });
+        receiptDetailData.push({ 'Scout': receipt.scoutName || '' });
+        receiptDetailData.push({ 'Troop': receipt.troopName || '' });
+        receiptDetailData.push({});
+
+        // Add line items
+        if (receipt.sales && receipt.sales.length > 0) {
+            receiptDetailData.push({ 'Description': 'Quantity', 'Amount': '' });
+            receipt.sales.forEach((sale) => {
+                const qty = sale.qty || 1;
+                const description = sale.type === 'card' ? 'Scout Card' : 'Donation';
+                receiptDetailData.push({
+                    'Description': description,
+                    'Quantity': sale.type === 'card' ? qty : 1,
+                    'Amount': '$' + (Number(sale.amount || 0).toFixed(2))
+                });
+            });
+        }
+
+        receiptDetailData.push({});
+        receiptDetailData.push({ 'Cards Sold': receipt.totalCards || 0, 'Total': '$' + (Number(receipt.cardAmount || 0).toFixed(2)) });
+        receiptDetailData.push({ 'Donations': receipt.totalDonations || 0, 'Total': '$' + (Number(receipt.donationAmount || 0).toFixed(2)) });
+        receiptDetailData.push({});
+        receiptDetailData.push({ 'TOTAL': '$' + (Number(receipt.totalAmount || 0).toFixed(2)) });
+
+        const wsReceipt = XLSX.utils.json_to_sheet(receiptDetailData);
+        wsReceipt['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 15 }];
+        XLSX.utils.book_append_sheet(wb, wsReceipt, 'Receipt');
+
+        // ============ TAB 3: COMPLETE DATA ============
+        const completeData = [];
+
+        // Header info
+        completeData.push({ 'Field': 'Value' });
+        completeData.push({ 'Receipt ID': receipt.id || 'N/A' });
+        completeData.push({ 'Receipt Number': receipt.receiptNumber || 'N/A' });
+        completeData.push({ 'Type': receipt.type || 'N/A' });
+        completeData.push({ 'Scout Name': receipt.scoutName || '' });
+        completeData.push({ 'Troop Name': receipt.troopName || '' });
+        completeData.push({ 'Date Created': receipt.date || receipt.createdAt || '' });
+        completeData.push({});
+
+        // Sales line items
+        if (receipt.sales && receipt.sales.length > 0) {
+            completeData.push({ 'Line #': 'Type', 'Customer': 'Qty', 'Amount': 'Date', 'Payment': 'Notes' });
+            receipt.sales.forEach((sale, index) => {
+                completeData.push({
+                    'Line #': index + 1,
+                    'Type': sale.type === 'card' ? 'Scout Card' : 'Donation',
+                    'Customer': sale.customerName || '',
+                    'Qty': sale.qty || 1,
+                    'Amount': '$' + (Number(sale.amount || 0).toFixed(2)),
+                    'Date': sale.date ? new Date(sale.date).toLocaleDateString() : '',
+                    'Payment': sale.paymentMethod || '',
+                    'Notes': sale.notes || ''
+                });
+            });
+        }
+
+        completeData.push({});
+        completeData.push({ 'Total Cards': receipt.totalCards || 0, 'Card Amount': '$' + (Number(receipt.cardAmount || 0).toFixed(2)) });
+        completeData.push({ 'Total Donations': receipt.totalDonations || 0, 'Donation Amount': '$' + (Number(receipt.donationAmount || 0).toFixed(2)) });
+        completeData.push({ 'Grand Total': '$' + (Number(receipt.totalAmount || 0).toFixed(2)) });
+
+        const wsComplete = XLSX.utils.json_to_sheet(completeData);
+        wsComplete['!cols'] = [
+            { wch: 12 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 10 },
+            { wch: 12 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 20 }
+        ];
+        XLSX.utils.book_append_sheet(wb, wsComplete, 'Complete Data');
+
+        // Generate filename and download
+        const fileName = `Receipt_${receipt.receiptNumber || receipt.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    }
+
     // ==================== EARNINGS ====================
+
+    updatePrizeCards(totalCardCount) {
+        const GALAXY_PRIZES = [
+            { cards: 25,  reward: '$10 Amazon/Visa Gift Card',  world: 'World 1 – Star Bit Galaxy',      emoji: '⭐' },
+            { cards: 50,  reward: '$25 Amazon/Visa Gift Card',  world: 'World 1 – Star Bit Galaxy',      emoji: '⭐' },
+            { cards: 100, reward: '$50 Amazon/Visa Gift Card',  world: 'World 1 – Star Bit Galaxy',      emoji: '⭐' },
+            { cards: 150, reward: '$75 Amazon/Visa Gift Card',  world: 'World 2 – Comet Circuit',        emoji: '🚀' },
+            { cards: 200, reward: '$100 Amazon/Visa Gift Card', world: 'World 2 – Comet Circuit',        emoji: '🚀' },
+            { cards: 250, reward: '$125 Amazon/Visa Gift Card', world: 'World 2 – Comet Circuit',        emoji: '🚀' },
+            { cards: 300, reward: '$150 Amazon/Visa Gift Card', world: 'World 3 – Starlight Speedway',   emoji: '🌟' },
+            { cards: 350, reward: '$175 Amazon/Visa Gift Card', world: 'World 3 – Starlight Speedway',   emoji: '🌟' },
+            { cards: 400, reward: '$200 Amazon/Visa Gift Card', world: 'World 3 – Starlight Speedway',   emoji: '🌟' },
+            { cards: 450, reward: '$225 Amazon/Visa Gift Card', world: 'World 3 – Starlight Speedway',   emoji: '🌟' },
+            { cards: 500, reward: '$250 Amazon/Visa Gift Card', world: 'World 3 – Starlight Speedway',   emoji: '🌟' },
+        ];
+        const TOP_SELLER_PRIZES = [
+            { cards: 150, reward: 'Fun Spot Party for 2',           details: 'Lunch + 2× 60-min Arcade Cards + 2× 1-Hr Ride Armbands' },
+            { cards: 200, reward: 'Fun Spot Party for 2 (Upgraded)', details: 'Lunch + 2× Single Day Passes + 2× $17.50 Gift Cards' },
+            { cards: 400, reward: 'Fun Spot Party for 4 – Family Fun!', details: 'Lunch + 4× Single Day Passes + 4× $25.00 Gift Cards' },
+        ];
+
+        // ---- CURRENT PRIZE CARD ----
+        const currentGalaxy  = [...GALAXY_PRIZES].reverse().find(p => totalCardCount >= p.cards) || null;
+        const currentTopSell = [...TOP_SELLER_PRIZES].reverse().find(p => totalCardCount >= p.cards) || null;
+        const currentEl = document.getElementById('prize-current-content');
+        if (currentEl) {
+            if (!currentGalaxy && !currentTopSell) {
+                currentEl.innerHTML = '<div class="prize-no-prize">Sell 25 cards to earn your first prize!</div>';
+            } else {
+                let html = '';
+                if (currentGalaxy) {
+                    html += `<div class="prize-tier prize-tier-gift-card">
+                        <div class="prize-tier-world">${currentGalaxy.world}</div>
+                        <div class="prize-tier-reward">${currentGalaxy.emoji} ${currentGalaxy.reward}</div>
+                        <div class="prize-tier-cards">${currentGalaxy.cards} cards milestone</div>
+                    </div>`;
+                }
+                if (currentTopSell) {
+                    html += `<div class="prize-tier prize-tier-fun-spot">
+                        <div class="prize-tier-world">Top Seller Galaxy</div>
+                        <div class="prize-tier-reward">🎢 ${currentTopSell.reward}</div>
+                        <div class="prize-tier-cards">${currentTopSell.details}</div>
+                    </div>`;
+                }
+                currentEl.innerHTML = html;
+            }
+        }
+
+        // ---- NEXT GOAL CARD ----
+        const nextGalaxy  = GALAXY_PRIZES.find(p => totalCardCount < p.cards) || null;
+        const nextTopSell = TOP_SELLER_PRIZES.find(p => totalCardCount < p.cards) || null;
+        const nextEl = document.getElementById('prize-next-content');
+        if (nextEl) {
+            if (!nextGalaxy && !nextTopSell) {
+                nextEl.innerHTML = '<div class="prize-maxed">🎉 You\'ve unlocked ALL prizes! Amazing work!</div>';
+            } else {
+                let html = '';
+                if (nextGalaxy) {
+                    const prevThreshold = (() => {
+                        const idx = GALAXY_PRIZES.findIndex(p => p.cards === nextGalaxy.cards);
+                        return idx > 0 ? GALAXY_PRIZES[idx - 1].cards : 0;
+                    })();
+                    const pct = Math.min(100, Math.round(((totalCardCount - prevThreshold) / (nextGalaxy.cards - prevThreshold)) * 100));
+                    html += `<div class="prize-next-milestone">
+                        <div class="prize-next-cards">${nextGalaxy.cards} cards</div>
+                        <div class="prize-next-reward">${nextGalaxy.emoji} ${nextGalaxy.reward}</div>
+                        <div class="prize-next-world">${nextGalaxy.world}</div>
+                        <div class="prize-progress-container">
+                            <div class="prize-progress-bar">
+                                <div class="prize-progress-fill" style="width:${pct}%"></div>
+                            </div>
+                            <div class="prize-progress-text">${totalCardCount} / ${nextGalaxy.cards} cards &nbsp;·&nbsp; ${nextGalaxy.cards - totalCardCount} to go!</div>
+                        </div>
+                    </div>`;
+                }
+                if (nextTopSell) {
+                    const remaining = nextTopSell.cards - totalCardCount;
+                    const prevTopThreshold = (() => {
+                        const idx = TOP_SELLER_PRIZES.findIndex(p => p.cards === nextTopSell.cards);
+                        return idx > 0 ? TOP_SELLER_PRIZES[idx - 1].cards : 0;
+                    })();
+                    const pct2 = Math.min(100, Math.round(((totalCardCount - prevTopThreshold) / (nextTopSell.cards - prevTopThreshold)) * 100));
+                    html += `<div class="prize-tier prize-tier-fun-spot" style="margin-top:0.75rem">
+                        <div class="prize-tier-world">Top Seller Galaxy – ${remaining} cards to go!</div>
+                        <div class="prize-tier-reward">🎢 ${nextTopSell.reward}</div>
+                        <div class="prize-tier-cards">${nextTopSell.details}</div>
+                        <div class="prize-progress-container" style="margin-top:0.5rem">
+                            <div class="prize-progress-bar">
+                                <div class="prize-progress-fill" style="width:${pct2}%"></div>
+                            </div>
+                            <div class="prize-progress-text">${totalCardCount} / ${nextTopSell.cards} cards</div>
+                        </div>
+                    </div>`;
+                }
+                nextEl.innerHTML = html;
+            }
+        }
+    }
 
     async loadEarningsData() {
         try {
@@ -8271,11 +9086,14 @@ class ScoutFundraiserApp {
             const totalEarnings = totalDonations + cardCommission;
 
             // Update summary section
+            document.getElementById('earnings-donations-count').textContent = donations.length;
             document.getElementById('earnings-donations').textContent = `$${totalDonations.toFixed(2)}`;
             document.getElementById('earnings-cards-count').textContent = totalCardCount;
             document.getElementById('earnings-cards-amount').textContent = `$${cardCommission.toFixed(2)}`;
             document.getElementById('earnings-total').textContent = `$${totalEarnings.toFixed(2)}`;
 
+            // Update prize status cards
+            this.updatePrizeCards(totalCardCount);
             // Combine and sort all sales by date (newest first) for activity feed
             const allItems = [];
             donations.forEach(d => {
@@ -8322,6 +9140,7 @@ class ScoutFundraiserApp {
             console.log('[EARNINGS] Loaded earnings data:', { totalDonations, totalCardCount, cardCommission, totalEarnings });
         } catch (error) {
             console.error('Error loading earnings data:', error);
+            document.getElementById('earnings-donations-count').textContent = '0';
             document.getElementById('earnings-donations').textContent = '$0.00';
             document.getElementById('earnings-total').textContent = '$0.00';
         }
@@ -8463,38 +9282,58 @@ window.viewReceiptDetails = async function(receiptId) {
         return;
     }
     try {
+        console.log('[RECEIPT] Viewing receipt:', receiptId);
         const receipt = await receiptManager.getReceiptById(receiptId);
         if (!receipt) {
             alert('Receipt not found');
             return;
         }
 
+        const receiptHTML = receiptManager.generateReceiptHTML(receipt);
+
         const modal = document.createElement('div');
         modal.className = 'modal receipt-detail-modal';
         modal.style.display = 'block';
-
-        const receiptHTML = receiptManager.generateReceiptHTML(receipt);
+        modal.style.zIndex = '10000';
 
         modal.innerHTML = `
             <div class="modal-content receipt-modal-content">
                 <div class="modal-header">
                     <h3>Receipt #${receipt.receiptNumber}</h3>
-                 
+                    <span class="close" style="cursor: pointer; font-size: 1.5rem; color: #999;">&times;</span>
                 </div>
-                <div class="receipt-view-container">
-                    ${receiptHTML}
+                <div class="receipt-view-container" style="overflow: auto; max-height: 75vh;">
+                    <iframe id="receipt-iframe-${receiptId}" style="width: 100%; height: 100%; border: none; min-height: 600px;" sandbox="allow-same-origin"></iframe>
                 </div>
-               
             </div>
         `;
 
         document.body.appendChild(modal);
 
+        // Write receipt HTML to iframe
+        setTimeout(() => {
+            const iframe = document.getElementById(`receipt-iframe-${receiptId}`);
+            if (iframe) {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                iframeDoc.open();
+                iframeDoc.write(receiptHTML);
+                iframeDoc.close();
+                console.log('[RECEIPT] Receipt HTML written to iframe');
+            }
+        }, 100);
+
+        // Close on backdrop click
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 modal.remove();
             }
         });
+
+        // Close button handler
+        const closeBtn = modal.querySelector('.close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => modal.remove());
+        }
     } catch (error) {
         console.error('Error viewing receipt:', error);
         alert('Error loading receipt details');
