@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "description": "Shared icon catalog and palette for app + icon review page.",
+  "paletteStrategy": {
+    "default": "rich",
+    "transactions": "playful"
+  },
+  "icons": [
+    {
+      "group": "Primary Navigation",
+      "slot": "home",
+      "name": "Home",
+      "detail": "home / start page",
+      "colors": { "playful": "#4CAF50", "rich": "#2E7D32" }
+    },
+    {
+      "group": "Primary Navigation",
+      "slot": "zap",
+      "name": "Quick Log",
+      "detail": "fast entry / action",
+      "colors": { "playful": "#10b981", "rich": "#10b981" }
+    }, 
+    {
+      "group": "Primary Navigation",
+      "slot": "chart",
+      "name": "Dashboard",
+      "detail": "performance / summary",
+      "colors": { "playful": "#FFC46E", "rich": "#F59E42" }
+    },
+    {
+      "group": "Primary Navigation",
+      "slot": "transactions",
+      "name": "All Transactions",
+      "detail": "all sales and donations",
+      "colors": { "playful": "#74D2FF", "rich": "#4FA5F0" }
+    },
+    {
+      "group": "Primary Navigation",
+      "slot": "dollar",
+      "name": "Earnings",
+      "detail": "money raised",
+      "colors": { "playful": "#FFD95C", "rich": "#C8920A" }
+    },
+    {
+      "group": "Primary Navigation",
+      "slot": "receipt",
+      "name": "Receipts",
+      "detail": "transaction records",
+      "colors": { "playful": "#C2A9FF", "rich": "#8C63F4" }
+    },
+    {
+      "group": "Primary Navigation",
+      "slot": "users",
+      "name": "Scouts & Team",
+      "detail": "members / unit",
+      "colors": { "playful": "#7AE3F0", "rich": "#22B8CF" }
+    },
+    {
+      "group": "Primary Navigation",
+      "slot": "settings",
+      "name": "Settings",
+      "detail": "configuration",
+      "colors": { "playful": "#A9B6C8", "rich": "#72839B" }
+    },
+    {
+      "group": "Transactions",
+      "slot": "card",
+      "name": "Card Sale",
+      "detail": "product transaction",
+      "colors": { "playful": "#7BE3AA", "rich": "#2FBE74" }
+    },
+    {
+      "group": "Transactions",
+      "slot": "heart",
+      "name": "Donation",
+      "detail": "filled heart for giving",
+      "colors": { "playful": "#FF4D80", "rich": "#FF0055" }
+    },
+    {
+      "group": "Transactions",
+      "slot": "qr",
+      "name": "QR Payment",
+      "detail": "scan to pay",
+      "colors": { "playful": "#9B92FF", "rich": "#6A5AF9" }
+    },
+    {
+      "group": "Transactions",
+      "slot": "links",
+      "name": "Share & Outreach",
+      "detail": "sharing / communication",
+      "colors": { "playful": "#89B0FF", "rich": "#507EF0" }
+    },
+    {
+      "group": "Actions",
+      "slot": "plus",
+      "name": "Add New",
+      "detail": "create item",
+      "colors": { "playful": "#78D3EF", "rich": "#32A9D1" }
+    },
+    {
+      "group": "Actions",
+      "slot": "check",
+      "name": "Approval",
+      "detail": "confirm / complete",
+      "colors": { "playful": "#77E0B9", "rich": "#35BF89" }
+    },
+    {
+      "group": "Actions",
+      "slot": "refresh",
+      "name": "Sync",
+      "detail": "reload / update",
+      "colors": { "playful": "#80D2FF", "rich": "#3BA8E8" }
+    },
+    {
+      "group": "Actions",
+      "slot": "download",
+      "name": "Export",
+      "detail": "download / save",
+      "colors": { "playful": "#8CB0FF", "rich": "#567EF2" }
+    },
+    {
+      "group": "Actions",
+      "slot": "trophy",
+      "name": "Goal & Rank",
+      "detail": "achievement / leaderboard",
+      "colors": { "playful": "#FFD26F", "rich": "#E8A92E" }
+    },
+    {
+      "group": "Actions",
+      "slot": "trash",
+      "name": "Delete",
+      "detail": "remove record",
+      "colors": { "playful": "#FFAD82", "rich": "#F37A42" }
+    },
+    {
+      "group": "Actions",
+      "slot": "logout",
+      "name": "Log Out",
+      "detail": "exit session",
+      "colors": { "playful": "#F79A90", "rich": "#E35D52" }
+    }
+  ]
+}
